@@ -1,0 +1,96 @@
+import pg from 'pg';
+
+const { Pool } = pg;
+
+if (!process.env.DATABASE_URL) {
+  console.error('[db] DATABASE_URL 환경변수가 설정되지 않았습니다.');
+}
+
+// Railway Postgres는 보통 SSL을 요구하지 않지만, 외부 접속 URL의 경우 필요할 수 있다.
+const needSsl = /sslmode=require/.test(process.env.DATABASE_URL || '') ||
+  process.env.PGSSL === 'true';
+
+export const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: needSsl ? { rejectUnauthorized: false } : false,
+});
+
+export function query(text, params) {
+  return pool.query(text, params);
+}
+
+// 스키마 생성 (idempotent)
+export async function initSchema() {
+  await query(`
+    CREATE TABLE IF NOT EXISTS users (
+      employee_id  TEXT PRIMARY KEY,
+      name         TEXT,
+      department   TEXT,
+      join_date    TEXT,
+      role         TEXT NOT NULL DEFAULT 'member',
+      created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+      last_login   TIMESTAMPTZ
+    );
+
+    CREATE TABLE IF NOT EXISTS tasks (
+      id            SERIAL PRIMARY KEY,
+      title         TEXT NOT NULL,
+      description   TEXT,
+      category      TEXT,
+      cycle_type    TEXT NOT NULL DEFAULT 'monthly',
+      cycle_days    INTEGER,
+      warn_before_days INTEGER NOT NULL DEFAULT 3,
+      require_photo BOOLEAN NOT NULL DEFAULT true,
+      require_gps   BOOLEAN NOT NULL DEFAULT false,
+      require_qr    BOOLEAN NOT NULL DEFAULT false,
+      location_name TEXT,
+      qr_token      TEXT UNIQUE,
+      gps_lat       DOUBLE PRECISION,
+      gps_lng       DOUBLE PRECISION,
+      checklist     JSONB NOT NULL DEFAULT '[]',
+      start_date    DATE NOT NULL DEFAULT CURRENT_DATE,
+      active        BOOLEAN NOT NULL DEFAULT true,
+      created_by    TEXT,
+      created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+
+    CREATE TABLE IF NOT EXISTS assignments (
+      id           SERIAL PRIMARY KEY,
+      task_id      INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+      employee_id  TEXT NOT NULL REFERENCES users(employee_id) ON DELETE CASCADE,
+      assigned_by  TEXT,
+      active       BOOLEAN NOT NULL DEFAULT true,
+      created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+      UNIQUE (task_id, employee_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS records (
+      id            SERIAL PRIMARY KEY,
+      assignment_id INTEGER REFERENCES assignments(id) ON DELETE SET NULL,
+      task_id       INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+      employee_id   TEXT NOT NULL,
+      performed_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+      period_key    TEXT NOT NULL,
+      note          TEXT,
+      status        TEXT NOT NULL DEFAULT 'ok',
+      photo_url     TEXT,
+      gps_lat       DOUBLE PRECISION,
+      gps_lng       DOUBLE PRECISION,
+      qr_verified   BOOLEAN NOT NULL DEFAULT false,
+      checklist_results JSONB NOT NULL DEFAULT '[]',
+      created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+
+    CREATE TABLE IF NOT EXISTS images (
+      id           TEXT PRIMARY KEY,
+      content_type TEXT NOT NULL,
+      data         BYTEA NOT NULL,
+      created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_records_task_period ON records(task_id, period_key);
+    CREATE INDEX IF NOT EXISTS idx_records_employee ON records(employee_id);
+    CREATE INDEX IF NOT EXISTS idx_assignments_employee ON assignments(employee_id);
+  `);
+  console.log('[db] 스키마 준비 완료');
+}

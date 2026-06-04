@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
+  <title>CAMS 점검관리 · 로그인</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <div class="login-wrap">
+    <div class="card login-card">
+      <div class="logo">
+        <b>✅ CAMS 점검관리</b>
+        <p>구성원 업무 할당 · 주기별 점검 관리</p>
+      </div>
+      <form id="loginForm">
+        <label for="employeeId">사번</label>
+        <input id="employeeId" name="employeeId" inputmode="numeric" autocomplete="username" placeholder="사번을 입력하세요" required />
+        <label for="password">비밀번호</label>
+        <input id="password" name="password" type="password" autocomplete="current-password" placeholder="비밀번호" required />
+        <div style="height:14px"></div>
+        <button class="btn" type="submit" id="submitBtn">로그인</button>
+        <div class="error" id="err"></div>
+      </form>
+      <p class="small muted" style="text-align:center;margin-top:14px">CAMS ERP 계정으로 로그인합니다.</p>
+    </div>
+  </div>
+
+  <script type="module">
+    import { api, getMe } from '/js/common.js';
+
+    // 이미 로그인 상태면 이동
+    getMe().then((u) => { if (u) location.href = u.role === 'admin' ? '/admin.html' : '/app.html'; });
+
+    const form = document.getElementById('loginForm');
+    const err = document.getElementById('err');
+    const btn = document.getElementById('submitBtn');
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      err.textContent = '';
+      btn.disabled = true; btn.textContent = '로그인 중...';
+      try {
+        const { user } = await api('/api/auth/login', {
+          method: 'POST',
+          body: {
+            employeeId: form.employeeId.value.trim(),
+            password: form.password.value,
+          },
+        });
+        location.href = user.role === 'admin' ? '/admin.html' : '/app.html';
+      } catch (e2) {
+        err.textContent = e2.message;
+        btn.disabled = false; btn.textContent = '로그인';
+      }
+    });
+  </script>
+</body>
+</html>

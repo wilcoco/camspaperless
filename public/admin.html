@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>CAMS 점검관리 · 관리자</title>
+  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+</head>
+<body>
+  <header class="app-header">
+    <div>
+      <h1>관리자 · 점검관리</h1>
+      <div class="sub" id="whoami"></div>
+    </div>
+    <div class="right">
+      <a class="btn small secondary" href="/app.html">내 업무</a>
+      <button class="btn small secondary" id="logoutBtn">로그아웃</button>
+    </div>
+  </header>
+
+  <div class="container">
+    <div class="tabs">
+      <button data-tab="overview" class="active">현황</button>
+      <button data-tab="tasks">업무관리</button>
+      <button data-tab="assign">배정</button>
+      <button data-tab="report">리포트</button>
+      <button data-tab="map">지도</button>
+    </div>
+
+    <!-- 현황 -->
+    <section data-panel="overview">
+      <div class="card">
+        <h2>이번 주기 진행 현황</h2>
+        <div id="overviewBox"><div class="empty">불러오는 중...</div></div>
+      </div>
+    </section>
+
+    <!-- 업무관리 -->
+    <section data-panel="tasks" hidden>
+      <div class="card">
+        <h2 id="taskFormTitle">새 업무 등록</h2>
+        <form id="taskForm">
+          <input type="hidden" id="taskId" />
+          <label>업무명 *</label>
+          <input id="f_title" required placeholder="예: 소화기 점검" />
+          <div class="row">
+            <div><label>분류</label><input id="f_category" placeholder="예: 안전" /></div>
+            <div><label>장소/구역</label><input id="f_location" placeholder="예: 본관 3층" /></div>
+          </div>
+          <label>설명</label>
+          <textarea id="f_description" placeholder="점검 방법, 주의사항 등"></textarea>
+          <div class="row">
+            <div>
+              <label>점검 주기</label>
+              <select id="f_cycle">
+                <option value="daily">매일</option>
+                <option value="weekly">매주</option>
+                <option value="monthly" selected>매월</option>
+                <option value="quarterly">분기</option>
+                <option value="yearly">매년</option>
+                <option value="custom">사용자정의(N일)</option>
+              </select>
+            </div>
+            <div id="cycleDaysWrap" style="display:none">
+              <label>주기 일수(N)</label>
+              <input id="f_cycle_days" type="number" min="1" value="30" />
+            </div>
+            <div><label>마감 N일 전 워닝</label><input id="f_warn" type="number" min="0" value="3" /></div>
+          </div>
+          <div class="checkrow"><input type="checkbox" id="f_photo" checked /><label for="f_photo">사진 첨부 필수</label></div>
+          <div class="checkrow"><input type="checkbox" id="f_gps" /><label for="f_gps">GPS 위치 필수</label></div>
+          <div class="checkrow"><input type="checkbox" id="f_qr" /><label for="f_qr">현장 QR 인증 필수</label></div>
+          <label>체크리스트 항목 (한 줄에 하나)</label>
+          <textarea id="f_checklist" placeholder="압력 게이지 정상&#10;외관 손상 없음&#10;안전핀 봉인 상태"></textarea>
+          <div style="height:10px"></div>
+          <div class="row">
+            <button class="btn" type="submit" id="taskSaveBtn">저장</button>
+            <button class="btn secondary" type="button" id="taskResetBtn">초기화</button>
+          </div>
+          <div class="error" id="taskErr"></div>
+        </form>
+      </div>
+      <div class="card">
+        <h2>등록된 업무</h2>
+        <div id="taskMgmtList"><div class="empty">불러오는 중...</div></div>
+      </div>
+    </section>
+
+    <!-- 배정 -->
+    <section data-panel="assign" hidden>
+      <div class="card">
+        <h2>담당자 배정</h2>
+        <label>업무 선택</label>
+        <select id="assignTaskSel"></select>
+        <label style="margin-top:14px">담당자 추가 (사번, 한 줄에 하나 · "사번,이름" 형식 가능)</label>
+        <textarea id="assignInput" placeholder="103485,홍길동&#10;100234,김철수&#10;100777"></textarea>
+        <button class="btn" id="assignAddBtn" style="margin-top:8px">배정 추가</button>
+        <div class="error" id="assignErr"></div>
+        <h2 style="margin-top:18px">현재 담당자</h2>
+        <div id="assignList"><div class="empty">업무를 선택하세요.</div></div>
+      </div>
+    </section>
+
+    <!-- 리포트 -->
+    <section data-panel="report" hidden>
+      <div class="card">
+        <h2>업무별 수행 리포트</h2>
+        <label>업무 선택</label>
+        <select id="reportTaskSel"></select>
+        <div id="reportBox" style="margin-top:14px"><div class="empty">업무를 선택하세요.</div></div>
+      </div>
+    </section>
+
+    <!-- 지도 -->
+    <section data-panel="map" hidden>
+      <div class="card">
+        <h2>GPS 점검 위치 지도</h2>
+        <label>업무 선택</label>
+        <select id="mapTaskSel"></select>
+        <div id="map" style="margin-top:14px"></div>
+        <div class="small muted" id="mapInfo" style="margin-top:8px"></div>
+      </div>
+    </section>
+  </div>
+
+  <!-- QR 모달 -->
+  <div class="modal-bg" id="qrModalBg">
+    <div class="modal">
+      <h2><span>현장 부착용 QR</span><button class="x" id="qrModalClose">&times;</button></h2>
+      <div id="qrModalBody" style="text-align:center"></div>
+    </div>
+  </div>
+
+  <script type="module" src="/js/admin.js"></script>
+</body>
+</html>

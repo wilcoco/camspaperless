@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
+  <title>CAMS 점검관리 · 내 업무</title>
+  <link rel="stylesheet" href="/css/style.css" />
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+</head>
+<body>
+  <header class="app-header">
+    <div>
+      <h1>내 업무</h1>
+      <div class="sub" id="whoami"></div>
+    </div>
+    <div class="right">
+      <a id="adminLink" class="btn small secondary" href="/admin.html" style="display:none">관리자</a>
+      <button class="btn small secondary" id="logoutBtn">로그아웃</button>
+    </div>
+  </header>
+
+  <div class="container">
+    <div class="card" id="warnCard" style="display:none">
+      <h2>⚠️ 처리 필요</h2>
+      <div id="warnList"></div>
+    </div>
+
+    <div class="card">
+      <h2>담당 업무</h2>
+      <div id="taskList"><div class="empty">불러오는 중...</div></div>
+    </div>
+  </div>
+
+  <!-- 수행 기록 모달 -->
+  <div class="modal-bg" id="modalBg">
+    <div class="modal">
+      <h2><span id="mTitle">점검 수행</span><button class="x" id="mClose">&times;</button></h2>
+      <div class="muted small" id="mMeta"></div>
+
+      <div id="checklistBox"></div>
+
+      <div id="photoWrap">
+        <label>현장 사진 <span id="photoReq" class="muted small"></span></label>
+        <input type="file" accept="image/*" capture="environment" id="photoInput" />
+        <img class="photo-preview" id="photoPreview" />
+      </div>
+
+      <div id="gpsWrap" style="display:none">
+        <label>위치(GPS) <span id="gpsReq" class="muted small"></span></label>
+        <button class="btn secondary" id="gpsBtn" type="button">📍 현재 위치 가져오기</button>
+        <div class="small muted" id="gpsInfo" style="margin-top:6px"></div>
+      </div>
+
+      <div id="qrWrap" style="display:none">
+        <label>현장 QR 인증 <span class="muted small">(필수)</span></label>
+        <button class="btn secondary" id="qrBtn" type="button">📷 QR 스캔 시작</button>
+        <div id="qrReader" class="scanner-box"></div>
+        <div class="small" id="qrInfo" style="margin-top:6px"></div>
+      </div>
+
+      <label>특이사항 / 메모</label>
+      <textarea id="noteInput" placeholder="이상 없음 / 특이사항을 적어주세요"></textarea>
+      <div class="checkrow">
+        <input type="checkbox" id="issueChk" />
+        <label for="issueChk">특이사항 있음(문제 발견)으로 표시</label>
+      </div>
+
+      <div style="height:8px"></div>
+      <button class="btn" id="submitRecord">제출하기</button>
+      <div class="error" id="mErr"></div>
+    </div>
+  </div>
+
+  <script type="module" src="/js/app.js"></script>
+</body>
+</html>
