@@ -6,6 +6,7 @@ import { fileURLToPath } from 'url';
 
 import { initSchema } from './src/db.js';
 import { attachUser } from './src/auth.js';
+import { logCamsConfig } from './src/cams.js';
 import authRoutes from './src/routes/auth.js';
 import adminRoutes from './src/routes/admin.js';
 import memberRoutes from './src/routes/member.js';
@@ -43,6 +44,7 @@ app.listen(PORT, '0.0.0.0', () => {
   if (!process.env.DATABASE_URL) {
     console.warn('[server] 경고: DATABASE_URL 이 설정되지 않았습니다. Railway에 PostgreSQL 플러그인을 추가하세요.');
   }
+  logCamsConfig();
 });
 
 async function initWithRetry(maxAttempts = 10) {

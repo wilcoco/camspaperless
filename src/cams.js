@@ -5,6 +5,19 @@ const LOGIN_URL = process.env.CAMS_LOGIN_URL || 'https://selfservice.icams.co.kr
  * CAMS ERP 로그인.
  * @returns {Promise<{ok:boolean, status:number, employee?:object, message?:string}>}
  */
+// 시작 시 CAMS 설정 상태를 로그로 남긴다 (키 값은 길이·끝4자만 노출).
+export function logCamsConfig() {
+  const key = cleanApiKey(process.env.CAMS_API_KEY);
+  const raw = process.env.CAMS_API_KEY || '';
+  console.log(`[cams] 로그인 URL: ${LOGIN_URL}`);
+  if (!key) {
+    console.warn('[cams] 경고: CAMS_API_KEY 가 비어 있습니다. Railway Variables를 확인하세요.');
+    return;
+  }
+  const trimmedNote = raw !== key ? ' (앞뒤 따옴표/공백 제거됨)' : '';
+  console.log(`[cams] CAMS_API_KEY 인식됨: 길이 ${key.length}자, 끝4자 ...${key.slice(-4)}${trimmedNote}`);
+}
+
 // 환경변수에 따옴표/공백/줄바꿈이 섞여 들어간 경우를 보정한다 (가장 흔한 설정 실수).
 function cleanApiKey(raw) {
   if (!raw) return '';
