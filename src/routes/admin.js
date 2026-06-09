@@ -155,40 +155,68 @@ router.get('/tasks/:id/assignments', async (req, res) => {
   res.json({ assignments: rows });
 });
 
-// 업무에 담당자 배정. 배정 시 task 기본값(장소/체크리스트)을 복사하며,
-// require_qr 업무는 배정별 QR 토큰을 발급한다(구역마다 다른 QR).
+// 부서(팀) 목록 — 배정 대상 선택용
+router.get('/departments', async (req, res) => {
+  const { rows } = await query(
+    `SELECT department, count(*)::int AS member_count
+     FROM users WHERE department IS NOT NULL AND department <> ''
+     GROUP BY department ORDER BY department`
+  );
+  res.json({ departments: rows });
+});
+
+// 업무에 담당자 배정. 대상(target)으로 전체/팀/개인을 지정한다.
+//   { target: 'all' | 'team' | 'individual', department?, employee_ids?[] }
+// (레거시: { employees: [...] } 도 허용)
 router.post('/tasks/:id/assignments', async (req, res) => {
   const taskId = parseInt(req.params.id, 10);
   const task = (await query('SELECT * FROM tasks WHERE id = $1', [taskId])).rows[0];
   if (!task) return res.status(404).json({ message: '업무 없음' });
-  const items = Array.isArray(req.body?.employees) ? req.body.employees : [];
+
+  const b = req.body || {};
+  // 대상 해석 → 사번 목록
+  let empList = [];
+  if (b.target === 'all') {
+    empList = (await query('SELECT employee_id FROM users')).rows.map((r) => r.employee_id);
+  } else if (b.target === 'team') {
+    if (!b.department) return res.status(400).json({ message: '팀(부서)을 선택하세요.' });
+    empList = (await query('SELECT employee_id FROM users WHERE department = $1', [b.department])).rows.map((r) => r.employee_id);
+  } else if (b.target === 'individual') {
+    empList = (Array.isArray(b.employee_ids) ? b.employee_ids : []).map((x) => String(x).trim()).filter(Boolean);
+  } else if (Array.isArray(b.employees)) {
+    // 레거시: 디렉터리에 없는 사번도 즉시 생성
+    for (const raw of b.employees) {
+      const item = typeof raw === 'string' ? { employee_id: raw } : raw;
+      const empId = String(item.employee_id || '').trim();
+      if (!empId) continue;
+      await query(
+        `INSERT INTO users (employee_id, name, department) VALUES ($1,$2,$3)
+         ON CONFLICT (employee_id) DO UPDATE SET name = COALESCE(EXCLUDED.name, users.name)`,
+        [empId, item.name || null, item.department || null]
+      );
+      empList.push(empId);
+    }
+  }
+
+  if (!empList.length) return res.status(400).json({ message: '배정할 대상이 없습니다. 먼저 구성원을 등록/선택하세요.' });
+
+  const checklist = JSON.stringify(Array.isArray(task.checklist) ? task.checklist : []);
+  const needQr = task.require_qr || checklistHasQr(task.checklist);
   const out = [];
-  for (const raw of items) {
-    const item = typeof raw === 'string' ? { employee_id: raw } : raw;
-    const empId = String(item.employee_id || '').trim();
-    if (!empId) continue;
-    await query(
-      `INSERT INTO users (employee_id, name, department)
-       VALUES ($1, $2, $3)
-       ON CONFLICT (employee_id) DO UPDATE SET name = COALESCE(EXCLUDED.name, users.name)`,
-      [empId, item.name || null, item.department || null]
-    );
-    const location = item.location_name != null ? item.location_name : task.location_name;
-    const checklist = Array.isArray(item.checklist) ? item.checklist : task.checklist;
-    const needQr = task.require_qr || checklistHasQr(checklist);
+  for (const empId of empList) {
     const qrToken = needQr ? crypto.randomUUID() : null;
     const { rows } = await query(
-      `INSERT INTO assignments (task_id, employee_id, assigned_by, location_name, checklist, qr_token)
-       VALUES ($1, $2, $3, $4, $5, $6)
+      `INSERT INTO assignments (task_id, employee_id, assigned_by, checklist, qr_token)
+       VALUES ($1, $2, $3, $4, $5)
        ON CONFLICT (task_id, employee_id) DO UPDATE SET
          active = true,
          qr_token = COALESCE(assignments.qr_token, EXCLUDED.qr_token)
        RETURNING id, employee_id`,
-      [taskId, empId, req.user.employee_id, location || null, JSON.stringify(checklist || []), qrToken]
+      [taskId, empId, req.user.employee_id, checklist, qrToken]
     );
     out.push(rows[0]);
   }
-  res.json({ assignments: out });
+  res.json({ assignments: out, count: out.length });
 });
 
 // 배정별 장소/체크리스트/GPS 수정 (구성원마다 다르게 부여)

@@ -24,6 +24,7 @@
     <div class="tabs">
       <button data-tab="overview" class="active">현황</button>
       <button data-tab="tasks">업무관리</button>
+      <button data-tab="members">구성원</button>
       <button data-tab="assign">배정</button>
       <button data-tab="report">리포트</button>
       <button data-tab="map">지도</button>
@@ -45,10 +46,8 @@
           <input type="hidden" id="taskId" />
           <label>업무명 *</label>
           <input id="f_title" required placeholder="예: 소화기 점검" />
-          <div class="row">
-            <div><label>분류</label><input id="f_category" placeholder="예: 안전" /></div>
-            <div><label>기본 장소/구역 <span class="muted small">(배정 시 구성원별 수정 가능)</span></label><input id="f_location" placeholder="예: 본관 3층" /></div>
-          </div>
+          <label>분류</label>
+          <input id="f_category" placeholder="예: 안전" />
           <label>설명</label>
           <textarea id="f_description" placeholder="점검 방법, 주의사항 등"></textarea>
           <div class="row">
@@ -72,7 +71,7 @@
           <div class="checkrow"><input type="checkbox" id="f_photo" checked /><label for="f_photo">사진 첨부 필수</label></div>
           <div class="checkrow"><input type="checkbox" id="f_gps" /><label for="f_gps">GPS 위치 필수</label></div>
           <div class="checkrow"><input type="checkbox" id="f_qr" /><label for="f_qr">현장 QR 인증 필수 <span class="muted small">(구역별 QR은 배정에서 발급)</span></label></div>
-          <label>기본 체크리스트 항목 <span class="muted small">(한 줄에 하나 · 형식: <b>항목명 | 타입</b> · 타입: 체크/텍스트/사진/위치/QR · 생략 시 체크)</span></label>
+          <label>세부 테스크 (체크리스트) <span class="muted small">(한 줄에 하나 · 형식: <b>항목명 | 타입</b> · 타입: 체크/텍스트/사진/위치/QR · 생략 시 체크)</span></label>
           <textarea id="f_checklist" placeholder="압력게이지 정상&#10;계기판 수치 | 텍스트&#10;외관 사진 | 사진&#10;설치 위치 | 위치&#10;현장 확인 | QR"></textarea>
           <div style="height:10px"></div>
           <div class="row">
@@ -88,16 +87,52 @@
       </div>
     </section>
 
+    <!-- 구성원 관리 -->
+    <section data-panel="members" hidden>
+      <div class="card">
+        <h2>구성원 등록</h2>
+        <p class="small muted" style="margin-top:0">배정 대상(팀/개인)을 고르려면 먼저 구성원이 등록되어 있어야 합니다. CAMS 로그인 시 자동 등록되며, 아래에서 미리 일괄 등록할 수도 있습니다.</p>
+        <label>일괄 등록 (한 줄에 하나 · <b>사번,이름,부서</b>)</label>
+        <textarea id="memberInput" placeholder="103485,홍길동,영업관리팀&#10;100234,김철수,안전팀&#10;100777,이영희,안전팀"></textarea>
+        <button class="btn" id="memberAddBtn" style="margin-top:8px">구성원 등록</button>
+        <div class="error" id="memberErr"></div>
+      </div>
+      <div class="card">
+        <h2>구성원 목록 <span class="small muted" id="memberCount"></span></h2>
+        <input id="memberFilter" placeholder="이름/사번/부서 검색" style="margin-bottom:10px" />
+        <div id="memberList"><div class="empty">불러오는 중...</div></div>
+      </div>
+    </section>
+
     <!-- 배정 -->
     <section data-panel="assign" hidden>
       <div class="card">
-        <h2>담당자 배정</h2>
+        <h2>업무 배정</h2>
         <label>업무 선택</label>
         <select id="assignTaskSel"></select>
-        <label style="margin-top:14px">담당자 추가 (한 줄에 하나 · <b>사번,이름,담당구역</b> 형식 / 이름·구역 생략 가능)</label>
-        <textarea id="assignInput" placeholder="103485,홍길동,본관 3층&#10;100234,김철수,별관 1층&#10;100777,,주차장"></textarea>
-        <button class="btn" id="assignAddBtn" style="margin-top:8px">배정 추가</button>
-        <div class="small muted" style="margin-top:6px">추가 후 각 담당자의 <b>구역·체크리스트</b>는 아래 목록에서 개별 편집할 수 있습니다.</div>
+
+        <label style="margin-top:14px">배정 대상</label>
+        <div class="tabs" id="targetTabs" style="margin-bottom:10px">
+          <button data-target="all" class="active">전체</button>
+          <button data-target="team">팀(부서)</button>
+          <button data-target="individual">개인 선택</button>
+        </div>
+
+        <div id="targetAll" class="small muted">등록된 전체 구성원에게 배정합니다. (<span id="allCount">0</span>명)</div>
+
+        <div id="targetTeam" hidden>
+          <label>팀(부서) 선택</label>
+          <select id="teamSel"></select>
+        </div>
+
+        <div id="targetIndividual" hidden>
+          <label>개인 선택 <span class="small muted">(여러 명 가능)</span></label>
+          <input id="indivFilter" placeholder="이름/사번/부서 검색" style="margin-bottom:8px" />
+          <div id="indivList" style="max-height:240px;overflow:auto;border:1px solid var(--line);border-radius:9px;padding:8px"></div>
+        </div>
+
+        <button class="btn" id="assignAddBtn" style="margin-top:14px">선택한 대상에 배정</button>
+        <div class="small muted" style="margin-top:6px">배정 후 각 담당자의 <b>담당 구역·세부 항목</b>은 아래 목록에서 개별 편집할 수 있습니다.</div>
         <div class="error" id="assignErr"></div>
         <h2 style="margin-top:18px">현재 담당자</h2>
         <div id="assignList"><div class="empty">업무를 선택하세요.</div></div>
