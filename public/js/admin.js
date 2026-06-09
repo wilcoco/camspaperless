@@ -1,4 +1,5 @@
-import { api, getMe, logout, el, esc, toast, STATUS_LABEL, fmtDate } from '/js/common.js';
+import { api, getMe, logout, el, esc, toast, STATUS_LABEL, fmtDate,
+  parseChecklistLine, checklistItemToLine, ITEM_TYPE_LABEL } from '/js/common.js';
 
 const $ = (id) => document.getElementById(id);
 let me = null;
@@ -81,7 +82,7 @@ async function saveTask(e) {
   e.preventDefault();
   $('taskErr').textContent = '';
   const id = $('taskId').value;
-  const checklist = $('f_checklist').value.split('\n').map((s) => s.trim()).filter(Boolean).map((label) => ({ label }));
+  const checklist = $('f_checklist').value.split('\n').map((s) => s.trim()).filter(Boolean).map(parseChecklistLine);
   const body = {
     title: $('f_title').value.trim(),
     category: $('f_category').value.trim(),
@@ -140,7 +141,7 @@ function fillTaskForm(t) {
   $('f_photo').checked = t.require_photo;
   $('f_gps').checked = t.require_gps;
   $('f_qr').checked = t.require_qr;
-  $('f_checklist').value = (Array.isArray(t.checklist) ? t.checklist : []).map((c) => c.label || c).join('\n');
+  $('f_checklist').value = (Array.isArray(t.checklist) ? t.checklist : []).map(checklistItemToLine).join('\n');
   $('taskFormTitle').textContent = '업무 수정 (#' + t.id + ')';
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
@@ -239,7 +240,7 @@ function openAsgModal(a) {
   $('asg_id').value = a.id;
   $('asgModalTitle').textContent = `${a.name || a.employee_id} · 구역/체크리스트`;
   $('asg_location').value = a.location_name || '';
-  $('asg_checklist').value = (Array.isArray(a.checklist) ? a.checklist : []).map((c) => c.label || c).join('\n');
+  $('asg_checklist').value = (Array.isArray(a.checklist) ? a.checklist : []).map(checklistItemToLine).join('\n');
   $('asg_lat').value = a.gps_lat ?? '';
   $('asg_lng').value = a.gps_lng ?? '';
   $('asgErr').textContent = '';
@@ -247,7 +248,7 @@ function openAsgModal(a) {
 }
 async function saveAsg() {
   const id = $('asg_id').value;
-  const checklist = $('asg_checklist').value.split('\n').map((s) => s.trim()).filter(Boolean).map((label) => ({ label }));
+  const checklist = $('asg_checklist').value.split('\n').map((s) => s.trim()).filter(Boolean).map(parseChecklistLine);
   const body = {
     location_name: $('asg_location').value.trim(),
     checklist,
@@ -284,16 +285,40 @@ async function loadReport() {
     const sub = rec
       ? `${fmtDate(rec.performed_at)}${rec.qr_verified ? ' · 🔳QR' : ''}${rec.gps_lat ? ' · 📍GPS' : ''}${rec.note ? ' · ' + esc(rec.note) : ''}`
       : '미수행';
-    const item = el(`<div class="list-item">
-      <div><div class="title">${esc(r.name || r.employee_id)} ${rec && rec.issue ? '<span class="badge issue">특이</span>' : ''}</div>
-        <div class="meta">${esc(r.employee_id)}${r.location_name ? ' · ' + esc(r.location_name) : ''} · ${sub}</div></div>
-      <div class="right-align"><span class="badge ${r.status}">${STATUS_LABEL[r.status] || r.status}</span></div></div>`);
+    const item = el(`<div class="list-item" style="flex-direction:column;align-items:stretch">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div><div class="title">${esc(r.name || r.employee_id)} ${rec && rec.issue ? '<span class="badge issue">특이</span>' : ''}</div>
+          <div class="meta">${esc(r.employee_id)}${r.location_name ? ' · ' + esc(r.location_name) : ''} · ${sub}</div></div>
+        <div class="right-align"><span class="badge ${r.status}">${STATUS_LABEL[r.status] || r.status}</span></div>
+      </div></div>`);
+    if (rec && Array.isArray(rec.checklist_results) && rec.checklist_results.length) {
+      const det = el('<div style="margin-top:8px;border-top:1px dashed var(--line);padding-top:8px"></div>');
+      rec.checklist_results.forEach((c) => det.appendChild(el(`<div class="small" style="margin:3px 0">${renderResult(c)}</div>`)));
+      item.appendChild(det);
+    }
     if (rec && rec.photo_url) {
-      item.style.cursor = 'pointer';
-      item.onclick = () => window.open(rec.photo_url, '_blank');
+      const p = el('<button class="btn small ghost" style="align-self:flex-start;margin-top:6px;padding-left:0">📷 대표 사진 보기</button>');
+      p.onclick = () => window.open(rec.photo_url, '_blank');
+      item.appendChild(p);
     }
     box.appendChild(item);
   });
+}
+
+// 체크리스트 항목 결과 한 줄 렌더
+function renderResult(c) {
+  const label = `<b>${esc(c.label || '')}</b>`;
+  switch (c.type) {
+    case 'text': return `${label}: ${esc(c.text || '-')}`;
+    case 'photo': return c.photo_url
+      ? `${label}: <a href="${esc(c.photo_url)}" target="_blank">📷 사진</a>`
+      : `${label}: 사진 없음`;
+    case 'gps': return c.gps_lat != null
+      ? `${label}: 📍 ${Number(c.gps_lat).toFixed(5)}, ${Number(c.gps_lng).toFixed(5)}`
+      : `${label}: 위치 없음`;
+    case 'qr': return `${label}: ${c.qr_verified ? '🔳 인증됨' : '미인증'}`;
+    default: return `${c.checked ? '✅' : '⬜'} ${esc(c.label || '')}`;
+  }
 }
 
 /* ---------- 지도 ---------- */

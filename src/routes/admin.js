@@ -10,6 +10,11 @@ router.use(requireAdmin);
 
 const CYCLE_TYPES = ['daily', 'weekly', 'monthly', 'quarterly', 'yearly', 'custom'];
 
+// 체크리스트에 QR 입력 항목이 있으면 배정 QR 토큰이 필요하다.
+function checklistHasQr(list) {
+  return Array.isArray(list) && list.some((it) => (it && it.type) === 'qr');
+}
+
 /* ---------------- 업무(tasks) ---------------- */
 
 router.get('/tasks', async (req, res) => {
@@ -170,7 +175,8 @@ router.post('/tasks/:id/assignments', async (req, res) => {
     );
     const location = item.location_name != null ? item.location_name : task.location_name;
     const checklist = Array.isArray(item.checklist) ? item.checklist : task.checklist;
-    const qrToken = task.require_qr ? crypto.randomUUID() : null;
+    const needQr = task.require_qr || checklistHasQr(checklist);
+    const qrToken = needQr ? crypto.randomUUID() : null;
     const { rows } = await query(
       `INSERT INTO assignments (task_id, employee_id, assigned_by, location_name, checklist, qr_token)
        VALUES ($1, $2, $3, $4, $5, $6)
@@ -193,14 +199,16 @@ router.put('/assignments/:id', async (req, res) => {
     'SELECT a.*, t.require_qr FROM assignments a JOIN tasks t ON t.id = a.task_id WHERE a.id = $1', [id]
   )).rows[0];
   if (!cur) return res.status(404).json({ message: '배정을 찾을 수 없습니다.' });
-  // QR 필수인데 토큰이 없으면 발급
-  const qrToken = cur.require_qr ? (cur.qr_token || crypto.randomUUID()) : cur.qr_token;
+  const newChecklist = Array.isArray(b.checklist) ? b.checklist : cur.checklist;
+  // require_qr 이거나 QR 입력 항목이 있으면 토큰 발급(기존 토큰 유지)
+  const needQr = cur.require_qr || checklistHasQr(newChecklist);
+  const qrToken = needQr ? (cur.qr_token || crypto.randomUUID()) : cur.qr_token;
   const { rows } = await query(
     `UPDATE assignments SET location_name = $1, checklist = $2, gps_lat = $3, gps_lng = $4, qr_token = $5
      WHERE id = $6 RETURNING id, location_name, checklist, gps_lat, gps_lng, (qr_token IS NOT NULL) AS has_qr`,
     [
       b.location_name != null ? b.location_name : cur.location_name,
-      JSON.stringify(Array.isArray(b.checklist) ? b.checklist : cur.checklist),
+      JSON.stringify(newChecklist),
       b.gps_lat != null ? Number(b.gps_lat) : cur.gps_lat,
       b.gps_lng != null ? Number(b.gps_lng) : cur.gps_lng,
       qrToken, id,

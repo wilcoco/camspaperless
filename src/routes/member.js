@@ -139,6 +139,37 @@ router.post('/records', async (req, res) => {
     }
   }
 
+  // 체크리스트 항목별 입력 처리 (타입: check/text/photo/gps/qr)
+  const expectedQr = `CAMSP:A${assignment.assignment_id}:${assignment.asg_qr_token}`;
+  const items = Array.isArray(b.checklist_results) ? b.checklist_results : [];
+  const processedItems = [];
+  for (const it of items) {
+    const out = { label: it.label, type: it.type || 'check' };
+    switch (out.type) {
+      case 'text':
+        out.text = it.text != null ? String(it.text) : '';
+        break;
+      case 'photo':
+        if (it.photo) {
+          try { out.photo_url = await saveImage(it.photo); }
+          catch (err) { console.error('[records] 항목 사진 저장 실패:', err.message); }
+        }
+        break;
+      case 'gps':
+        if (it.gps_lat != null && it.gps_lng != null) {
+          out.gps_lat = Number(it.gps_lat);
+          out.gps_lng = Number(it.gps_lng);
+        }
+        break;
+      case 'qr':
+        out.qr_verified = !!assignment.asg_qr_token && String(it.qr_payload || '') === expectedQr;
+        break;
+      default:
+        out.checked = !!it.checked;
+    }
+    processedItems.push(out);
+  }
+
   const today = new Date();
   const curKey = periodKey(today, assignment.cycle_type, assignment.cycle_days, assignment.start_date);
 
@@ -152,7 +183,7 @@ router.post('/records', async (req, res) => {
       assignmentId, assignment.task_id, req.user.employee_id, curKey,
       b.note || null, b.issue ? 'issue' : 'ok', photoUrl,
       gpsLat, gpsLng, qrVerified,
-      JSON.stringify(Array.isArray(b.checklist_results) ? b.checklist_results : []),
+      JSON.stringify(processedItems),
     ]
   );
   res.json({ record: rows[0] });

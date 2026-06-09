@@ -72,8 +72,8 @@
           <div class="checkrow"><input type="checkbox" id="f_photo" checked /><label for="f_photo">사진 첨부 필수</label></div>
           <div class="checkrow"><input type="checkbox" id="f_gps" /><label for="f_gps">GPS 위치 필수</label></div>
           <div class="checkrow"><input type="checkbox" id="f_qr" /><label for="f_qr">현장 QR 인증 필수 <span class="muted small">(구역별 QR은 배정에서 발급)</span></label></div>
-          <label>기본 체크리스트 항목 (한 줄에 하나) <span class="muted small">(배정 시 구성원별 수정 가능)</span></label>
-          <textarea id="f_checklist" placeholder="압력 게이지 정상&#10;외관 손상 없음&#10;안전핀 봉인 상태"></textarea>
+          <label>기본 체크리스트 항목 <span class="muted small">(한 줄에 하나 · 형식: <b>항목명 | 타입</b> · 타입: 체크/텍스트/사진/위치/QR · 생략 시 체크)</span></label>
+          <textarea id="f_checklist" placeholder="압력게이지 정상&#10;계기판 수치 | 텍스트&#10;외관 사진 | 사진&#10;설치 위치 | 위치&#10;현장 확인 | QR"></textarea>
           <div style="height:10px"></div>
           <div class="row">
             <button class="btn" type="submit" id="taskSaveBtn">저장</button>
@@ -133,8 +133,8 @@
       <input type="hidden" id="asg_id" />
       <label>담당 구역/장소</label>
       <input id="asg_location" placeholder="예: 본관 3층 동편" />
-      <label>체크리스트 항목 (한 줄에 하나)</label>
-      <textarea id="asg_checklist" placeholder="압력게이지 정상&#10;외관 손상 없음"></textarea>
+      <label>체크리스트 항목 <span class="muted small">(형식: 항목명 | 타입 · 타입: 체크/텍스트/사진/위치/QR)</span></label>
+      <textarea id="asg_checklist" placeholder="소화기 위치 | 위치&#10;외관 사진 | 사진&#10;특이사항 | 텍스트"></textarea>
       <div class="row">
         <div><label>기준 위도(GPS, 선택)</label><input id="asg_lat" type="number" step="any" placeholder="37.5665" /></div>
         <div><label>기준 경도(GPS, 선택)</label><input id="asg_lng" type="number" step="any" placeholder="126.978" /></div>

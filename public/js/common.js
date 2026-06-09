@@ -55,6 +55,34 @@ export const STATUS_LABEL = {
   done: '완료', pending: '대기', due_soon: '마감임박', overdue: '미수행',
 };
 
+// 체크리스트 항목 입력 타입
+export const ITEM_TYPES = ['check', 'text', 'photo', 'gps', 'qr'];
+export const ITEM_TYPE_LABEL = { check: '체크', text: '텍스트', photo: '사진', gps: '위치', qr: 'QR' };
+const ITEM_TYPE_ALIASES = {
+  '체크': 'check', 'check': 'check', '확인': 'check',
+  '텍스트': 'text', 'text': 'text', '글자': 'text', '메모': 'text',
+  '사진': 'photo', 'photo': 'photo', 'img': 'photo', 'image': 'photo',
+  '위치': 'gps', 'gps': 'gps', '좌표': 'gps',
+  'qr': 'qr', 'QR': 'qr',
+};
+export function normalizeItemType(s) {
+  if (!s) return 'check';
+  return ITEM_TYPE_ALIASES[String(s).trim().toLowerCase()] || ITEM_TYPE_ALIASES[String(s).trim()] || 'check';
+}
+// textarea 한 줄 -> {label, type}.  "라벨 | 타입"
+export function parseChecklistLine(line) {
+  const parts = line.split('|');
+  const label = parts[0].trim();
+  const type = parts.length > 1 ? normalizeItemType(parts[1]) : 'check';
+  return { label, type };
+}
+// {label,type} -> textarea 한 줄
+export function checklistItemToLine(it) {
+  const label = it.label || it;
+  const type = normalizeItemType(it.type);
+  return type === 'check' ? label : `${label} | ${ITEM_TYPE_LABEL[type]}`;
+}
+
 // 카메라 입력 이미지를 캔버스로 리사이즈/압축 → dataURL(jpeg)
 export function compressImage(file, maxSize = 1280, quality = 0.72) {
   return new Promise((resolve, reject) => {
