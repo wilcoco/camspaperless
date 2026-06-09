@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import QRCode from 'qrcode';
 import { query } from '../db.js';
 import { requireAdmin } from '../auth.js';
+import { camsEmployees, camsEmployee } from '../cams.js';
 import { periodKey, prevPeriodKey, periodRange, computeStatus, CYCLE_LABELS } from '../periodicity.js';
 
 const router = Router();
@@ -138,6 +139,34 @@ router.post('/users', async (req, res) => {
     created.push(rows[0]);
   }
   res.json({ users: created });
+});
+
+// CAMS ERP 전체 사원 목록을 가져와 구성원 디렉터리에 동기화
+router.post('/sync-employees', async (req, res) => {
+  const r = await camsEmployees();
+  if (!r.ok) return res.status(r.status).json({ message: r.message });
+  let synced = 0;
+  for (const e of r.employees) {
+    const id = String(e.employeeId || e.employee_id || '').trim();
+    if (!id) continue;
+    await query(
+      `INSERT INTO users (employee_id, name, department)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (employee_id) DO UPDATE SET
+         name = COALESCE(EXCLUDED.name, users.name),
+         department = COALESCE(EXCLUDED.department, users.department)`,
+      [id, e.name || null, e.department || null]
+    );
+    synced += 1;
+  }
+  res.json({ synced });
+});
+
+// 특정 사원 상세 (CAMS 원본)
+router.get('/employees/:id', async (req, res) => {
+  const r = await camsEmployee(req.params.id);
+  if (!r.ok) return res.status(r.status).json({ message: r.message });
+  res.json({ employee: r.employee });
 });
 
 /* ---------------- 배정(assignments) ---------------- */

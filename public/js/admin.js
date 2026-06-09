@@ -179,7 +179,19 @@ async function loadTaskSelectors() {
 let membersCache = [];
 function bindMembers() {
   $('memberAddBtn').onclick = addMembers;
+  $('syncBtn').onclick = syncEmployees;
   $('memberFilter').oninput = () => renderMembers($('memberFilter').value);
+}
+async function syncEmployees() {
+  $('syncErr').textContent = ''; $('syncOk').textContent = '';
+  const btn = $('syncBtn'); btn.disabled = true; btn.textContent = '가져오는 중...';
+  try {
+    const { synced } = await api('/api/admin/sync-employees', { method: 'POST' });
+    $('syncOk').textContent = `CAMS 사원 ${synced}명을 동기화했습니다.`;
+    toast(`${synced}명 동기화 완료`);
+    await loadMembers();
+  } catch (e) { $('syncErr').textContent = e.message; }
+  finally { btn.disabled = false; btn.textContent = '↻ CAMS에서 사원 목록 가져오기'; }
 }
 async function addMembers() {
   $('memberErr').textContent = '';

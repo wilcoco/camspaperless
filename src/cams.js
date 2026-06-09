@@ -1,5 +1,7 @@
-// CAMS ERP 로그인 API 연동
+// CAMS ERP API 연동
 const LOGIN_URL = process.env.CAMS_LOGIN_URL || 'https://selfservice.icams.co.kr/api/erp/login';
+// 베이스 URL (.../api/erp). 로그인 URL에서 /login 을 제거해 유도하거나 CAMS_BASE_URL 사용.
+const BASE_URL = (process.env.CAMS_BASE_URL || LOGIN_URL.replace(/\/login\/?$/, '')).replace(/\/$/, '');
 
 /**
  * CAMS ERP 로그인.
@@ -95,4 +97,44 @@ export async function camsLogin(employeeId, password) {
     status: res.status || 401,
     message: upstreamMsg || '사번 또는 비밀번호가 올바르지 않습니다.',
   };
+}
+
+// CAMS ERP GET 호출 공통
+async function camsGet(path) {
+  const apiKey = cleanApiKey(process.env.CAMS_API_KEY);
+  if (!apiKey) return { ok: false, status: 500, message: '서버에 CAMS_API_KEY가 설정되지 않았습니다.' };
+  let res;
+  try {
+    res = await fetch(`${BASE_URL}${path}`, { headers: { 'x-api-key': apiKey } });
+  } catch (err) {
+    console.error('[cams] 네트워크 오류:', err.message);
+    return { ok: false, status: 502, message: '인증 서버에 연결할 수 없습니다.' };
+  }
+  let body = {};
+  let text = '';
+  try { text = await res.text(); body = text ? JSON.parse(text) : {}; } catch { /* non-json */ }
+  if (!res.ok) {
+    const msg = (body && body.message) || text || '';
+    if (/api[\s_-]?key/i.test(msg) || res.status === 403) {
+      console.error(`[cams] API Key 거부됨 (status ${res.status}, ${path}). 키 끝4자=...${apiKey.slice(-4)}`);
+      return { ok: false, status: 500, message: '서버 인증 키(CAMS_API_KEY) 설정 오류입니다. 관리자에게 문의하세요.' };
+    }
+    return { ok: false, status: res.status || 500, message: msg || 'CAMS 조회에 실패했습니다.' };
+  }
+  return { ok: true, status: 200, body };
+}
+
+// 전체 사원 목록 [{employeeId, name, department}, ...]
+export async function camsEmployees() {
+  const r = await camsGet('/employees');
+  if (!r.ok) return r;
+  const employees = Array.isArray(r.body?.employees) ? r.body.employees : [];
+  return { ok: true, status: 200, employees };
+}
+
+// 특정 사원 상세 {employeeId, name, department, address, joinDate, retirementDate}
+export async function camsEmployee(employeeId) {
+  const r = await camsGet(`/employee/${encodeURIComponent(employeeId)}`);
+  if (!r.ok) return r;
+  return { ok: true, status: 200, employee: r.body?.employee || null };
 }
