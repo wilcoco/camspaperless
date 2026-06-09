@@ -20,7 +20,11 @@ function maxDate(a, b) {
 async function loadMyAssignments(employeeId) {
   const today = new Date();
   const rows = (await query(
-    `SELECT a.id AS assignment_id, a.created_at AS assignment_created_at, t.*
+    `SELECT a.id AS assignment_id, a.created_at AS assignment_created_at,
+            a.location_name AS asg_location, a.checklist AS asg_checklist,
+            a.gps_lat AS asg_gps_lat, a.gps_lng AS asg_gps_lng,
+            (a.qr_token IS NOT NULL) AS asg_has_qr,
+            t.*
      FROM assignments a JOIN tasks t ON t.id = a.task_id
      WHERE a.employee_id = $1 AND a.active AND t.active
      ORDER BY t.title`,
@@ -46,15 +50,16 @@ async function loadMyAssignments(employeeId) {
       title: t.title,
       description: t.description,
       category: t.category,
-      location_name: t.location_name,
+      // 장소/체크리스트/GPS 는 배정(구성원)별 값을 우선, 없으면 업무 기본값
+      location_name: t.asg_location != null ? t.asg_location : t.location_name,
       cycle_type: t.cycle_type,
       cycle_label: CYCLE_LABELS[t.cycle_type] || t.cycle_type,
       require_photo: t.require_photo,
       require_gps: t.require_gps,
       require_qr: t.require_qr,
-      checklist: t.checklist,
-      gps_lat: t.gps_lat,
-      gps_lng: t.gps_lng,
+      checklist: (Array.isArray(t.asg_checklist) && t.asg_checklist.length) ? t.asg_checklist : t.checklist,
+      gps_lat: t.asg_gps_lat != null ? t.asg_gps_lat : t.gps_lat,
+      gps_lng: t.asg_gps_lng != null ? t.asg_gps_lng : t.gps_lng,
       period_key: curKey,
       status: st.status,
       days_left: st.daysLeft,
@@ -86,7 +91,10 @@ router.post('/records', async (req, res) => {
   if (!assignmentId) return res.status(400).json({ message: '배정 정보가 없습니다.' });
 
   const assignment = (await query(
-    `SELECT a.*, t.* , a.id AS assignment_id, t.id AS task_id
+    `SELECT t.require_photo, t.require_gps, t.require_qr,
+            t.cycle_type, t.cycle_days, t.start_date,
+            a.employee_id, a.qr_token AS asg_qr_token,
+            a.id AS assignment_id, t.id AS task_id
      FROM assignments a JOIN tasks t ON t.id = a.task_id
      WHERE a.id = $1`,
     [assignmentId]
@@ -101,12 +109,12 @@ router.post('/records', async (req, res) => {
     return res.status(400).json({ message: '사진 첨부가 필요합니다.' });
   }
 
-  // QR 검증
+  // QR 검증 (배정별 토큰 — 해당 구역의 QR)
   let qrVerified = false;
   if (assignment.require_qr) {
     const payload = String(b.qr_payload || '');
-    const expected = `CAMSP:${assignment.task_id}:${assignment.qr_token}`;
-    if (payload !== expected) {
+    const expected = `CAMSP:A${assignment.assignment_id}:${assignment.asg_qr_token}`;
+    if (!assignment.asg_qr_token || payload !== expected) {
       return res.status(400).json({ message: '현장 QR 코드 인증에 실패했습니다. 해당 위치의 QR을 스캔하세요.' });
     }
     qrVerified = true;

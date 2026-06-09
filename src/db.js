@@ -97,5 +97,28 @@ export async function initSchema() {
     CREATE INDEX IF NOT EXISTS idx_records_employee ON records(employee_id);
     CREATE INDEX IF NOT EXISTS idx_assignments_employee ON assignments(employee_id);
   `);
+
+  // 마이그레이션: 장소/체크리스트/QR/GPS 를 배정(assignment) 단위로 이동.
+  // 같은 업무라도 구성원마다 구역·체크리스트·QR이 다를 수 있다. task 값은 "기본값(템플릿)"으로 유지.
+  await query(`
+    ALTER TABLE assignments ADD COLUMN IF NOT EXISTS location_name TEXT;
+    ALTER TABLE assignments ADD COLUMN IF NOT EXISTS checklist JSONB NOT NULL DEFAULT '[]';
+    ALTER TABLE assignments ADD COLUMN IF NOT EXISTS qr_token TEXT;
+    ALTER TABLE assignments ADD COLUMN IF NOT EXISTS gps_lat DOUBLE PRECISION;
+    ALTER TABLE assignments ADD COLUMN IF NOT EXISTS gps_lng DOUBLE PRECISION;
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_assignments_qr ON assignments(qr_token) WHERE qr_token IS NOT NULL;
+
+    -- 기존 배정에 task 기본값 백필
+    UPDATE assignments a SET location_name = t.location_name
+      FROM tasks t WHERE a.task_id = t.id AND a.location_name IS NULL AND t.location_name IS NOT NULL;
+    UPDATE assignments a SET checklist = t.checklist
+      FROM tasks t WHERE a.task_id = t.id AND a.checklist = '[]'::jsonb AND t.checklist <> '[]'::jsonb;
+    UPDATE assignments a SET gps_lat = t.gps_lat, gps_lng = t.gps_lng
+      FROM tasks t WHERE a.task_id = t.id AND a.gps_lat IS NULL AND t.gps_lat IS NOT NULL;
+    -- QR 필수 업무의 기존 배정에 배정별 QR 토큰 발급
+    UPDATE assignments a SET qr_token = gen_random_uuid()::text
+      FROM tasks t WHERE a.task_id = t.id AND t.require_qr AND a.qr_token IS NULL;
+  `);
+
   console.log('[db] 스키마 준비 완료');
 }

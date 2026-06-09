@@ -16,6 +16,7 @@ async function init() {
   setupTabs();
   bindTaskForm();
   bindAssign();
+  bindAsgModal();
   bindReport();
   bindMap();
   bindQrModal();
@@ -31,7 +32,7 @@ function setupTabs() {
     const tab = b.dataset.tab;
     if (tab === 'overview') loadOverview();
     if (tab === 'tasks') loadTasks();
-    if (tab === 'assign') loadTaskSelectors();
+    if (tab === 'assign') loadTaskSelectors().then(loadAssignments);
     if (tab === 'report') loadTaskSelectors();
     if (tab === 'map') { loadTaskSelectors(); setTimeout(() => map && map.invalidateSize(), 100); }
   });
@@ -119,11 +120,6 @@ async function loadTasks() {
     const edit = el('<button class="btn small secondary">수정</button>');
     edit.onclick = () => fillTaskForm(t);
     actions.appendChild(edit);
-    if (t.require_qr) {
-      const qr = el('<button class="btn small secondary" style="margin-left:4px">QR</button>');
-      qr.onclick = () => showQr(t.id);
-      actions.appendChild(qr);
-    }
     const del = el('<button class="btn small danger" style="margin-left:4px">삭제</button>');
     del.onclick = async () => { if (confirm(`"${t.title}" 업무를 삭제할까요? 관련 기록도 삭제됩니다.`)) { await api('/api/admin/tasks/' + t.id, { method: 'DELETE' }); toast('삭제됨'); loadTasks(); } };
     actions.appendChild(del);
@@ -154,12 +150,12 @@ function bindQrModal() {
   $('qrModalClose').onclick = () => $('qrModalBg').classList.remove('open');
   $('qrModalBg').addEventListener('click', (e) => { if (e.target.id === 'qrModalBg') $('qrModalBg').classList.remove('open'); });
 }
-async function showQr(taskId) {
-  const data = await api('/api/admin/tasks/' + taskId + '/qr');
+async function showAssignmentQr(assignmentId) {
+  const data = await api('/api/admin/assignments/' + assignmentId + '/qr');
   $('qrModalBody').innerHTML = `
-    <p class="muted small">${esc(data.title)}${data.location ? ' · ' + esc(data.location) : ''}</p>
+    <p class="muted small">${esc(data.title)} · ${esc(data.assignee)}${data.location ? ' · ' + esc(data.location) : ''}</p>
     <img src="${data.dataUrl}" style="width:240px;max-width:100%" />
-    <p class="small muted">이 QR을 인쇄해 현장에 부착하세요. 담당자가 스캔하면 해당 위치 수행이 증빙됩니다.</p>
+    <p class="small muted">이 QR을 인쇄해 <b>${esc(data.location || '해당 구역')}</b>에 부착하세요. 담당자가 스캔하면 그 위치에서 수행했음이 증빙됩니다.</p>
     <button class="btn secondary" onclick="window.print()">인쇄</button>`;
   $('qrModalBg').classList.add('open');
 }
@@ -186,8 +182,8 @@ async function addAssignments() {
   const taskId = $('assignTaskSel').value;
   if (!taskId) { $('assignErr').textContent = '업무를 선택하세요.'; return; }
   const employees = $('assignInput').value.split('\n').map((l) => l.trim()).filter(Boolean).map((line) => {
-    const [employee_id, name] = line.split(',').map((s) => s.trim());
-    return { employee_id, name: name || null };
+    const [employee_id, name, location] = line.split(',').map((s) => s.trim());
+    return { employee_id, name: name || null, location_name: location || null };
   });
   if (!employees.length) { $('assignErr').textContent = '사번을 입력하세요.'; return; }
   try {
@@ -198,22 +194,72 @@ async function addAssignments() {
     tasksCache = []; // 담당자 수 갱신
   } catch (e) { $('assignErr').textContent = e.message; }
 }
+function taskRequiresQr(taskId) {
+  const t = tasksCache.find((x) => String(x.id) === String(taskId));
+  return t ? t.require_qr : false;
+}
 async function loadAssignments() {
   const box = $('assignList');
   const taskId = $('assignTaskSel').value;
   if (!taskId) { box.innerHTML = '<div class="empty">업무를 선택하세요.</div>'; return; }
   const { assignments } = await api('/api/admin/tasks/' + taskId + '/assignments');
   if (!assignments.length) { box.innerHTML = '<div class="empty">배정된 담당자가 없습니다.</div>'; return; }
+  const needQr = taskRequiresQr(taskId);
   box.innerHTML = '';
   assignments.forEach((a) => {
+    const cl = Array.isArray(a.checklist) ? a.checklist.length : 0;
+    const meta = `${esc(a.employee_id)} · 구역: ${esc(a.location_name || '미지정')}` +
+      (cl ? ` · 체크리스트 ${cl}개` : '') + (needQr ? (a.has_qr ? ' · 🔳QR' : ' · QR미발급') : '');
     const item = el(`<div class="list-item">
-      <div><div class="title">${esc(a.name || a.employee_id)}</div><div class="meta">${esc(a.employee_id)} · ${esc(a.department || '')}</div></div>
-      <div></div></div>`);
-    const del = el('<button class="btn small danger">해제</button>');
-    del.onclick = async () => { await api('/api/admin/assignments/' + a.id, { method: 'DELETE' }); toast('해제됨'); loadAssignments(); tasksCache = []; };
-    item.lastElementChild.appendChild(del);
+      <div><div class="title">${esc(a.name || a.employee_id)}</div><div class="meta">${meta}</div></div>
+      <div class="right-align" style="white-space:nowrap"></div></div>`);
+    const actions = item.querySelector('.right-align');
+    const edit = el('<button class="btn small secondary">구역·체크</button>');
+    edit.onclick = () => openAsgModal(a);
+    actions.appendChild(edit);
+    if (needQr) {
+      const qr = el('<button class="btn small secondary" style="margin-left:4px">QR</button>');
+      qr.onclick = () => showAssignmentQr(a.id);
+      actions.appendChild(qr);
+    }
+    const del = el('<button class="btn small danger" style="margin-left:4px">해제</button>');
+    del.onclick = async () => { if (confirm('배정을 해제할까요?')) { await api('/api/admin/assignments/' + a.id, { method: 'DELETE' }); toast('해제됨'); loadAssignments(); tasksCache = []; } };
+    actions.appendChild(del);
     box.appendChild(item);
   });
+}
+
+/* ---------- 배정 편집 모달 ---------- */
+function bindAsgModal() {
+  $('asgModalClose').onclick = () => $('asgModalBg').classList.remove('open');
+  $('asgModalBg').addEventListener('click', (e) => { if (e.target.id === 'asgModalBg') $('asgModalBg').classList.remove('open'); });
+  $('asgSaveBtn').onclick = saveAsg;
+}
+function openAsgModal(a) {
+  $('asg_id').value = a.id;
+  $('asgModalTitle').textContent = `${a.name || a.employee_id} · 구역/체크리스트`;
+  $('asg_location').value = a.location_name || '';
+  $('asg_checklist').value = (Array.isArray(a.checklist) ? a.checklist : []).map((c) => c.label || c).join('\n');
+  $('asg_lat').value = a.gps_lat ?? '';
+  $('asg_lng').value = a.gps_lng ?? '';
+  $('asgErr').textContent = '';
+  $('asgModalBg').classList.add('open');
+}
+async function saveAsg() {
+  const id = $('asg_id').value;
+  const checklist = $('asg_checklist').value.split('\n').map((s) => s.trim()).filter(Boolean).map((label) => ({ label }));
+  const body = {
+    location_name: $('asg_location').value.trim(),
+    checklist,
+    gps_lat: $('asg_lat').value !== '' ? Number($('asg_lat').value) : null,
+    gps_lng: $('asg_lng').value !== '' ? Number($('asg_lng').value) : null,
+  };
+  try {
+    await api('/api/admin/assignments/' + id, { method: 'PUT', body });
+    toast('저장되었습니다.');
+    $('asgModalBg').classList.remove('open');
+    await loadAssignments();
+  } catch (e) { $('asgErr').textContent = e.message; }
 }
 
 /* ---------- 리포트 ---------- */
@@ -240,7 +286,7 @@ async function loadReport() {
       : '미수행';
     const item = el(`<div class="list-item">
       <div><div class="title">${esc(r.name || r.employee_id)} ${rec && rec.issue ? '<span class="badge issue">특이</span>' : ''}</div>
-        <div class="meta">${esc(r.employee_id)} · ${sub}</div></div>
+        <div class="meta">${esc(r.employee_id)}${r.location_name ? ' · ' + esc(r.location_name) : ''} · ${sub}</div></div>
       <div class="right-align"><span class="badge ${r.status}">${STATUS_LABEL[r.status] || r.status}</span></div></div>`);
     if (rec && rec.photo_url) {
       item.style.cursor = 'pointer';

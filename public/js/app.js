@@ -144,7 +144,7 @@ async function toggleScanner() {
       { fps: 10, qrbox: 220 },
       (text) => {
         qrPayload = text;
-        const ok = text.startsWith(`CAMSP:${current.task_id}:`);
+        const ok = text.startsWith(`CAMSP:A${current.assignment_id}:`);
         $('qrInfo').innerHTML = ok
           ? '✅ 현장 QR 인증됨'
           : '⚠️ 다른 위치의 QR입니다. 해당 구역 QR을 스캔하세요.';

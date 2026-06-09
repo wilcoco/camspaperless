@@ -47,7 +47,7 @@
           <input id="f_title" required placeholder="예: 소화기 점검" />
           <div class="row">
             <div><label>분류</label><input id="f_category" placeholder="예: 안전" /></div>
-            <div><label>장소/구역</label><input id="f_location" placeholder="예: 본관 3층" /></div>
+            <div><label>기본 장소/구역 <span class="muted small">(배정 시 구성원별 수정 가능)</span></label><input id="f_location" placeholder="예: 본관 3층" /></div>
           </div>
           <label>설명</label>
           <textarea id="f_description" placeholder="점검 방법, 주의사항 등"></textarea>
@@ -71,8 +71,8 @@
           </div>
           <div class="checkrow"><input type="checkbox" id="f_photo" checked /><label for="f_photo">사진 첨부 필수</label></div>
           <div class="checkrow"><input type="checkbox" id="f_gps" /><label for="f_gps">GPS 위치 필수</label></div>
-          <div class="checkrow"><input type="checkbox" id="f_qr" /><label for="f_qr">현장 QR 인증 필수</label></div>
-          <label>체크리스트 항목 (한 줄에 하나)</label>
+          <div class="checkrow"><input type="checkbox" id="f_qr" /><label for="f_qr">현장 QR 인증 필수 <span class="muted small">(구역별 QR은 배정에서 발급)</span></label></div>
+          <label>기본 체크리스트 항목 (한 줄에 하나) <span class="muted small">(배정 시 구성원별 수정 가능)</span></label>
           <textarea id="f_checklist" placeholder="압력 게이지 정상&#10;외관 손상 없음&#10;안전핀 봉인 상태"></textarea>
           <div style="height:10px"></div>
           <div class="row">
@@ -94,9 +94,10 @@
         <h2>담당자 배정</h2>
         <label>업무 선택</label>
         <select id="assignTaskSel"></select>
-        <label style="margin-top:14px">담당자 추가 (사번, 한 줄에 하나 · "사번,이름" 형식 가능)</label>
-        <textarea id="assignInput" placeholder="103485,홍길동&#10;100234,김철수&#10;100777"></textarea>
+        <label style="margin-top:14px">담당자 추가 (한 줄에 하나 · <b>사번,이름,담당구역</b> 형식 / 이름·구역 생략 가능)</label>
+        <textarea id="assignInput" placeholder="103485,홍길동,본관 3층&#10;100234,김철수,별관 1층&#10;100777,,주차장"></textarea>
         <button class="btn" id="assignAddBtn" style="margin-top:8px">배정 추가</button>
+        <div class="small muted" style="margin-top:6px">추가 후 각 담당자의 <b>구역·체크리스트</b>는 아래 목록에서 개별 편집할 수 있습니다.</div>
         <div class="error" id="assignErr"></div>
         <h2 style="margin-top:18px">현재 담당자</h2>
         <div id="assignList"><div class="empty">업무를 선택하세요.</div></div>
@@ -123,6 +124,25 @@
         <div class="small muted" id="mapInfo" style="margin-top:8px"></div>
       </div>
     </section>
+  </div>
+
+  <!-- 배정 편집 모달 (구성원별 구역/체크리스트) -->
+  <div class="modal-bg" id="asgModalBg">
+    <div class="modal">
+      <h2><span id="asgModalTitle">담당 구역 설정</span><button class="x" id="asgModalClose">&times;</button></h2>
+      <input type="hidden" id="asg_id" />
+      <label>담당 구역/장소</label>
+      <input id="asg_location" placeholder="예: 본관 3층 동편" />
+      <label>체크리스트 항목 (한 줄에 하나)</label>
+      <textarea id="asg_checklist" placeholder="압력게이지 정상&#10;외관 손상 없음"></textarea>
+      <div class="row">
+        <div><label>기준 위도(GPS, 선택)</label><input id="asg_lat" type="number" step="any" placeholder="37.5665" /></div>
+        <div><label>기준 경도(GPS, 선택)</label><input id="asg_lng" type="number" step="any" placeholder="126.978" /></div>
+      </div>
+      <div style="height:10px"></div>
+      <button class="btn" id="asgSaveBtn">저장</button>
+      <div class="error" id="asgErr"></div>
+    </div>
   </div>
 
   <!-- QR 모달 -->

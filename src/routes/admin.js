@@ -140,7 +140,9 @@ router.post('/users', async (req, res) => {
 router.get('/tasks/:id/assignments', async (req, res) => {
   const id = parseInt(req.params.id, 10);
   const { rows } = await query(
-    `SELECT a.id, a.employee_id, a.active, u.name, u.department
+    `SELECT a.id, a.employee_id, a.active, a.location_name, a.checklist,
+            a.gps_lat, a.gps_lng, (a.qr_token IS NOT NULL) AS has_qr,
+            u.name, u.department
      FROM assignments a JOIN users u ON u.employee_id = a.employee_id
      WHERE a.task_id = $1 ORDER BY u.name NULLS LAST`,
     [id]
@@ -148,9 +150,12 @@ router.get('/tasks/:id/assignments', async (req, res) => {
   res.json({ assignments: rows });
 });
 
-// 업무에 담당자 배정 (employee_id 배열 또는 {employee_id,name} 배열)
+// 업무에 담당자 배정. 배정 시 task 기본값(장소/체크리스트)을 복사하며,
+// require_qr 업무는 배정별 QR 토큰을 발급한다(구역마다 다른 QR).
 router.post('/tasks/:id/assignments', async (req, res) => {
   const taskId = parseInt(req.params.id, 10);
+  const task = (await query('SELECT * FROM tasks WHERE id = $1', [taskId])).rows[0];
+  if (!task) return res.status(404).json({ message: '업무 없음' });
   const items = Array.isArray(req.body?.employees) ? req.body.employees : [];
   const out = [];
   for (const raw of items) {
@@ -163,16 +168,67 @@ router.post('/tasks/:id/assignments', async (req, res) => {
        ON CONFLICT (employee_id) DO UPDATE SET name = COALESCE(EXCLUDED.name, users.name)`,
       [empId, item.name || null, item.department || null]
     );
+    const location = item.location_name != null ? item.location_name : task.location_name;
+    const checklist = Array.isArray(item.checklist) ? item.checklist : task.checklist;
+    const qrToken = task.require_qr ? crypto.randomUUID() : null;
     const { rows } = await query(
-      `INSERT INTO assignments (task_id, employee_id, assigned_by)
-       VALUES ($1, $2, $3)
-       ON CONFLICT (task_id, employee_id) DO UPDATE SET active = true
+      `INSERT INTO assignments (task_id, employee_id, assigned_by, location_name, checklist, qr_token)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       ON CONFLICT (task_id, employee_id) DO UPDATE SET
+         active = true,
+         qr_token = COALESCE(assignments.qr_token, EXCLUDED.qr_token)
        RETURNING id, employee_id`,
-      [taskId, empId, req.user.employee_id]
+      [taskId, empId, req.user.employee_id, location || null, JSON.stringify(checklist || []), qrToken]
     );
     out.push(rows[0]);
   }
   res.json({ assignments: out });
+});
+
+// 배정별 장소/체크리스트/GPS 수정 (구성원마다 다르게 부여)
+router.put('/assignments/:id', async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  const b = req.body || {};
+  const cur = (await query(
+    'SELECT a.*, t.require_qr FROM assignments a JOIN tasks t ON t.id = a.task_id WHERE a.id = $1', [id]
+  )).rows[0];
+  if (!cur) return res.status(404).json({ message: '배정을 찾을 수 없습니다.' });
+  // QR 필수인데 토큰이 없으면 발급
+  const qrToken = cur.require_qr ? (cur.qr_token || crypto.randomUUID()) : cur.qr_token;
+  const { rows } = await query(
+    `UPDATE assignments SET location_name = $1, checklist = $2, gps_lat = $3, gps_lng = $4, qr_token = $5
+     WHERE id = $6 RETURNING id, location_name, checklist, gps_lat, gps_lng, (qr_token IS NOT NULL) AS has_qr`,
+    [
+      b.location_name != null ? b.location_name : cur.location_name,
+      JSON.stringify(Array.isArray(b.checklist) ? b.checklist : cur.checklist),
+      b.gps_lat != null ? Number(b.gps_lat) : cur.gps_lat,
+      b.gps_lng != null ? Number(b.gps_lng) : cur.gps_lng,
+      qrToken, id,
+    ]
+  );
+  res.json({ assignment: rows[0] });
+});
+
+// 배정별 QR (현장 구역에 부착) — 구역마다 다른 코드
+router.get('/assignments/:id/qr', async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  const a = (await query(
+    `SELECT a.*, t.title, t.require_qr, u.name FROM assignments a
+     JOIN tasks t ON t.id = a.task_id JOIN users u ON u.employee_id = a.employee_id
+     WHERE a.id = $1`, [id]
+  )).rows[0];
+  if (!a) return res.status(404).json({ message: '배정 없음' });
+  let token = a.qr_token;
+  if (!token) {
+    token = crypto.randomUUID();
+    await query('UPDATE assignments SET qr_token = $1 WHERE id = $2', [token, id]);
+  }
+  const payload = `CAMSP:A${id}:${token}`;
+  const dataUrl = await QRCode.toDataURL(payload, { width: 480, margin: 2 });
+  res.json({
+    assignmentId: id, title: a.title, assignee: a.name || a.employee_id,
+    location: a.location_name, payload, dataUrl,
+  });
 });
 
 router.delete('/assignments/:id', async (req, res) => {
@@ -224,7 +280,8 @@ router.get('/reports/task/:id', async (req, res) => {
   const prevKey = prevPeriodKey(today, task.cycle_type, task.cycle_days, task.start_date);
 
   const assignees = (await query(
-    `SELECT a.id AS assignment_id, a.created_at AS assignment_created_at, a.employee_id, u.name, u.department
+    `SELECT a.id AS assignment_id, a.created_at AS assignment_created_at, a.employee_id,
+            a.location_name, u.name, u.department
      FROM assignments a JOIN users u ON u.employee_id = a.employee_id
      WHERE a.task_id = $1 AND a.active ORDER BY u.name NULLS LAST`,
     [id]
@@ -249,6 +306,7 @@ router.get('/reports/task/:id', async (req, res) => {
     const st = computeStatus(today, task, !!rec, prevByEmp.has(a.employee_id), since);
     return {
       employee_id: a.employee_id, name: a.name, department: a.department,
+      location_name: a.location_name,
       done: !!rec, status: st.status, days_left: st.daysLeft,
       record: rec ? {
         id: rec.id, performed_at: rec.performed_at, note: rec.note, issue: rec.status === 'issue',
