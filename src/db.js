@@ -15,6 +15,11 @@ export const pool = new Pool({
   ssl: needSsl ? { rejectUnauthorized: false } : false,
 });
 
+// 유휴 커넥션 오류로 프로세스가 죽지 않도록 처리 (Railway에서 흔함)
+pool.on('error', (err) => {
+  console.error('[db] 유휴 커넥션 오류:', err.message);
+});
+
 export function query(text, params) {
   return pool.query(text, params);
 }

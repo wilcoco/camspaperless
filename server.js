@@ -36,11 +36,28 @@ app.use((err, req, res, _next) => {
 
 const PORT = process.env.PORT || 3000;
 
-initSchema()
-  .then(() => {
-    app.listen(PORT, () => console.log(`[server] http://localhost:${PORT} 에서 실행 중`));
-  })
-  .catch((err) => {
-    console.error('[server] 스키마 초기화 실패:', err);
-    process.exit(1);
-  });
+// 헬스체크가 즉시 통과하도록 HTTP 서버를 먼저 바인딩한 뒤,
+// 스키마 초기화는 비동기로(재시도 포함) 수행한다. DB가 잠깐 늦게 떠도 컨테이너가 죽지 않는다.
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`[server] 포트 ${PORT} 에서 수신 중`);
+  if (!process.env.DATABASE_URL) {
+    console.warn('[server] 경고: DATABASE_URL 이 설정되지 않았습니다. Railway에 PostgreSQL 플러그인을 추가하세요.');
+  }
+});
+
+async function initWithRetry(maxAttempts = 10) {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      await initSchema();
+      return;
+    } catch (err) {
+      const wait = Math.min(30000, 2000 * attempt);
+      console.error(`[server] 스키마 초기화 실패 (시도 ${attempt}/${maxAttempts}): ${err.message}. ${wait}ms 후 재시도`);
+      await new Promise((r) => setTimeout(r, wait));
+    }
+  }
+  console.error('[server] 스키마 초기화를 끝내 완료하지 못했습니다. DATABASE_URL/Postgres 상태를 확인하세요.');
+}
+
+initWithRetry();
+
