@@ -180,7 +180,21 @@ let membersCache = [];
 function bindMembers() {
   $('memberAddBtn').onclick = addMembers;
   $('syncBtn').onclick = syncEmployees;
-  $('memberFilter').oninput = () => renderMembers($('memberFilter').value);
+  $('memberFilter').oninput = renderMembersFiltered;
+  $('memberDeptFilter').onchange = renderMembersFiltered;
+}
+function renderMembersFiltered() { renderMembers($('memberFilter').value, $('memberDeptFilter').value); }
+// membersCache 에서 부서 목록(정렬)
+function departments() {
+  return [...new Set(membersCache.map((u) => u.department).filter(Boolean))].sort();
+}
+// 부서 셀렉트 채우기. allLabel 지정 시 '전체' 옵션 포함.
+function fillDeptSelect(id, allLabel) {
+  const sel = $(id); if (!sel) return;
+  const prev = sel.value;
+  const opts = departments().map((d) => `<option value="${esc(d)}">${esc(d)}</option>`);
+  sel.innerHTML = (allLabel ? `<option value="">${allLabel}</option>` : '') + opts.join('');
+  if (prev && [...sel.options].some((o) => o.value === prev)) sel.value = prev;
 }
 async function syncEmployees() {
   $('syncErr').textContent = ''; $('syncOk').textContent = '';
@@ -211,17 +225,20 @@ async function loadMembers() {
   const { users } = await api('/api/admin/users');
   membersCache = users;
   $('memberCount').textContent = `(${users.length}명)`;
-  renderMembers($('memberFilter') ? $('memberFilter').value : '');
+  fillDeptSelect('memberDeptFilter', '전체 부서');
+  renderMembersFiltered();
 }
-function filterUsers(q) {
+function filterUsers(q, dept) {
   q = (q || '').trim().toLowerCase();
-  if (!q) return membersCache;
-  return membersCache.filter((u) => [u.name, u.employee_id, u.department].some((v) => (v || '').toLowerCase().includes(q)));
+  let list = membersCache;
+  if (dept) list = list.filter((u) => u.department === dept);
+  if (q) list = list.filter((u) => [u.name, u.employee_id].some((v) => (v || '').toLowerCase().includes(q)));
+  return list;
 }
-function renderMembers(q) {
+function renderMembers(q, dept) {
   const box = $('memberList');
-  const list = filterUsers(q);
-  if (!list.length) { box.innerHTML = '<div class="empty">구성원이 없습니다.</div>'; return; }
+  const list = filterUsers(q, dept);
+  if (!list.length) { box.innerHTML = '<div class="empty">해당 조건의 구성원이 없습니다.</div>'; return; }
   box.innerHTML = '';
   list.forEach((u) => {
     box.appendChild(el(`<div class="list-item">
@@ -236,7 +253,8 @@ let assignTarget = 'all';
 function bindAssign() {
   $('assignTaskSel').onchange = loadAssignments;
   $('assignAddBtn').onclick = doAssign;
-  $('indivFilter').oninput = () => renderIndivList($('indivFilter').value);
+  $('indivFilter').oninput = renderIndivFiltered;
+  $('indivDeptFilter').onchange = renderIndivFiltered;
   document.querySelectorAll('#targetTabs button').forEach((b) => b.onclick = () => {
     document.querySelectorAll('#targetTabs button').forEach((x) => x.classList.remove('active'));
     b.classList.add('active');
@@ -244,26 +262,41 @@ function bindAssign() {
     $('targetAll').hidden = assignTarget !== 'all';
     $('targetTeam').hidden = assignTarget !== 'team';
     $('targetIndividual').hidden = assignTarget !== 'individual';
+    updateIndivCount();
   });
 }
 async function loadTargets() {
   if (!membersCache.length) await loadMembers();
   $('allCount').textContent = membersCache.length;
-  const { departments } = await api('/api/admin/departments');
-  $('teamSel').innerHTML = departments.length
-    ? departments.map((d) => `<option value="${esc(d.department)}">${esc(d.department)} (${d.member_count}명)</option>`).join('')
+  const { departments: deps } = await api('/api/admin/departments');
+  $('teamSel').innerHTML = deps.length
+    ? deps.map((d) => `<option value="${esc(d.department)}">${esc(d.department)} (${d.member_count}명)</option>`).join('')
     : '<option value="">등록된 부서 없음</option>';
-  renderIndivList('');
+  // 개인 선택은 부서로 먼저 거른다 — 기본값은 첫 부서(전체 명단을 한 번에 안 보여줌)
+  fillDeptSelect('indivDeptFilter', '전체 부서');
+  const ds = departments();
+  if (ds.length) $('indivDeptFilter').value = ds[0];
+  renderIndivFiltered();
 }
-function renderIndivList(q) {
+const selectedIndiv = new Set(); // 부서 필터를 바꿔도 유지되는 개인 선택
+function renderIndivFiltered() { renderIndivList($('indivFilter').value, $('indivDeptFilter').value); }
+function updateIndivCount() {
+  $('assignAddBtn').textContent = assignTarget === 'individual' && selectedIndiv.size
+    ? `선택한 ${selectedIndiv.size}명 배정` : '선택한 대상에 배정';
+}
+function renderIndivList(q, dept) {
   const box = $('indivList');
-  const list = filterUsers(q);
-  if (!list.length) { box.innerHTML = '<div class="empty">구성원이 없습니다. 먼저 구성원 탭에서 등록하세요.</div>'; return; }
+  const list = filterUsers(q, dept);
+  if (!list.length) { box.innerHTML = '<div class="empty">해당 조건의 구성원이 없습니다. 먼저 구성원 탭에서 동기화/등록하세요.</div>'; updateIndivCount(); return; }
   box.innerHTML = '';
   list.forEach((u) => {
-    const row = el(`<div class="checkrow"><input type="checkbox" value="${esc(u.employee_id)}" id="iv_${esc(u.employee_id)}"><label for="iv_${esc(u.employee_id)}">${esc(u.name || u.employee_id)} <span class="muted small">· ${esc(u.employee_id)} · ${esc(u.department || '')}</span></label></div>`);
+    const row = el(`<div class="checkrow"><input type="checkbox" id="iv_${esc(u.employee_id)}"><label for="iv_${esc(u.employee_id)}">${esc(u.name || u.employee_id)} <span class="muted small">· ${esc(u.employee_id)} · ${esc(u.department || '')}</span></label></div>`);
+    const cb = row.querySelector('input');
+    cb.checked = selectedIndiv.has(u.employee_id);
+    cb.onchange = () => { cb.checked ? selectedIndiv.add(u.employee_id) : selectedIndiv.delete(u.employee_id); updateIndivCount(); };
     box.appendChild(row);
   });
+  updateIndivCount();
 }
 async function doAssign() {
   $('assignErr').textContent = '';
@@ -274,13 +307,14 @@ async function doAssign() {
     body.department = $('teamSel').value;
     if (!body.department) { $('assignErr').textContent = '팀(부서)을 선택하세요.'; return; }
   } else if (assignTarget === 'individual') {
-    body.employee_ids = [...document.querySelectorAll('#indivList input:checked')].map((c) => c.value);
+    body.employee_ids = [...selectedIndiv];
     if (!body.employee_ids.length) { $('assignErr').textContent = '개인을 한 명 이상 선택하세요.'; return; }
   }
   try {
     const r = await api('/api/admin/tasks/' + taskId + '/assignments', { method: 'POST', body });
     toast(`${r.count}명 배정되었습니다.`);
-    document.querySelectorAll('#indivList input:checked').forEach((c) => (c.checked = false));
+    selectedIndiv.clear();
+    renderIndivFiltered();
     await loadAssignments();
     tasksCache = [];
   } catch (e) { $('assignErr').textContent = e.message; }

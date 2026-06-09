@@ -105,7 +105,10 @@
       </div>
       <div class="card">
         <h2>구성원 목록 <span class="small muted" id="memberCount"></span></h2>
-        <input id="memberFilter" placeholder="이름/사번/부서 검색" style="margin-bottom:10px" />
+        <div class="row" style="margin-bottom:10px">
+          <select id="memberDeptFilter"></select>
+          <input id="memberFilter" placeholder="이름/사번 검색" />
+        </div>
         <div id="memberList"><div class="empty">불러오는 중...</div></div>
       </div>
     </section>
@@ -132,8 +135,11 @@
         </div>
 
         <div id="targetIndividual" hidden>
-          <label>개인 선택 <span class="small muted">(여러 명 가능)</span></label>
-          <input id="indivFilter" placeholder="이름/사번/부서 검색" style="margin-bottom:8px" />
+          <label>개인 선택 <span class="small muted">(여러 명 가능 · 부서로 먼저 거르세요)</span></label>
+          <div class="row" style="margin-bottom:8px">
+            <select id="indivDeptFilter"></select>
+            <input id="indivFilter" placeholder="이름/사번 검색" />
+          </div>
           <div id="indivList" style="max-height:240px;overflow:auto;border:1px solid var(--line);border-radius:9px;padding:8px"></div>
         </div>
 
