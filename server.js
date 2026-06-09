@@ -11,6 +11,7 @@ import authRoutes from './src/routes/auth.js';
 import adminRoutes from './src/routes/admin.js';
 import memberRoutes from './src/routes/member.js';
 import imageRoutes from './src/routes/images.js';
+import diagRoutes from './src/routes/diag.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -25,6 +26,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/me', memberRoutes);
 app.use('/api/images', imageRoutes);
+app.use('/api/diag', diagRoutes);
 
 // 정적 프론트엔드
 app.use(express.static(path.join(__dirname, 'public')));
