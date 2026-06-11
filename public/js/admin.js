@@ -656,6 +656,47 @@ async function loadReport() {
       <div class="stat"><b style="color:var(--warn)">${issues}</b><span>특이사항</span></div>
     </div>
     <div class="small muted" style="margin-bottom:8px">${esc(task.cycle_label)} · 주기 ${esc(period_key)}</div>`;
+
+  // 세부업무별 담당자 수행 현황 — 항목을 축으로 담당자·결과를 모아 보여준다
+  const itemMap = new Map(); // label -> { inputs, entries: [{name, hasRecord, resultHtml}] }
+  // 업무 체크리스트 순서를 먼저 깔아 항목 순서를 고정 (미배정 항목도 드러나게)
+  (Array.isArray(task.checklist) ? task.checklist : []).map(normalizeItemInputs).forEach((it) => {
+    if (!itemMap.has(it.label)) itemMap.set(it.label, { inputs: it.inputs, entries: [] });
+  });
+  rows.forEach((r) => {
+    (Array.isArray(r.checklist) ? r.checklist : []).map(normalizeItemInputs).forEach((it) => {
+      if (!itemMap.has(it.label)) itemMap.set(it.label, { inputs: it.inputs, entries: [] });
+      const res = (r.record && Array.isArray(r.record.checklist_results))
+        ? r.record.checklist_results.find((c) => c && c.label === it.label) : null;
+      itemMap.get(it.label).entries.push({
+        name: r.name || r.employee_id,
+        hasRecord: !!r.record,
+        resultHtml: res ? resultParts(res) : (r.record ? '이번 기록에 항목 결과 없음' : ''),
+      });
+    });
+  });
+  if (itemMap.size) {
+    const eviLabel = Object.fromEntries(INPUT_DEFS);
+    const sec = el('<div style="margin-bottom:14px"><label>세부업무별 현황</label></div>');
+    for (const [label, v] of itemMap) {
+      const chips = v.inputs.map((t) => `<span class="chip">${eviLabel[t] || t}</span>`).join(' ');
+      const card = el(`<div class="cl-item"><div style="font-weight:600">${esc(label)} <span class="small">${chips}</span></div></div>`);
+      if (!v.entries.length) {
+        card.appendChild(el('<div class="small muted" style="margin-top:6px">담당자 미지정 — 배정 탭에서 매칭하세요.</div>'));
+      }
+      v.entries.forEach((e) => {
+        const badge = e.hasRecord
+          ? '<span class="badge done">수행</span>'
+          : '<span class="badge overdue">미수행</span>';
+        card.appendChild(el(`<div class="small" style="margin-top:6px;display:flex;justify-content:space-between;gap:8px;align-items:center">
+          <span><b>${esc(e.name)}</b>${e.resultHtml ? ' · ' + e.resultHtml : ''}</span>${badge}</div>`));
+      });
+      sec.appendChild(card);
+    }
+    box.appendChild(sec);
+    box.appendChild(el('<label>담당자별 현황</label>'));
+  }
+
   rows.forEach((r) => {
     const rec = r.record;
     const times = r.required > 1 ? `${r.done_count}/${r.required}회 · ` : '';
@@ -682,10 +723,10 @@ async function loadReport() {
   });
 }
 
-// 체크리스트 항목 결과 한 줄 렌더 — 증빙 조합(inputs) 또는 구형(type) 결과 모두 처리
-function renderResult(c) {
+// 체크리스트 항목 결과 렌더 — 증빙 조합(inputs) 또는 구형(type) 결과 모두 처리
+function resultParts(c) {
   const inputs = (Array.isArray(c.inputs) && c.inputs.length) ? c.inputs : [c.type || 'check'];
-  const parts = inputs.map((t) => {
+  return inputs.map((t) => {
     switch (t) {
       case 'text': return esc(c.text || '-');
       case 'photo': return c.photo_url
@@ -695,8 +736,10 @@ function renderResult(c) {
       case 'qr': return c.qr_verified ? '🔳 인증됨' : 'QR 미인증';
       default: return c.checked ? '✅ 완료' : '⬜ 미체크';
     }
-  });
-  return `<b>${esc(c.label || '')}</b>: ${parts.join(' · ')}`;
+  }).join(' · ');
+}
+function renderResult(c) {
+  return `<b>${esc(c.label || '')}</b>: ${resultParts(c)}`;
 }
 
 /* ---------- 지도 ---------- */

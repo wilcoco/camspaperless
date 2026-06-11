@@ -361,7 +361,7 @@ router.get('/reports/task/:id', async (req, res) => {
 
   const assignees = (await query(
     `SELECT a.id AS assignment_id, a.created_at AS assignment_created_at, a.employee_id,
-            a.location_name, u.name, u.department
+            a.location_name, a.checklist, u.name, u.department
      FROM assignments a JOIN users u ON u.employee_id = a.employee_id
      WHERE a.task_id = $1 AND a.active ORDER BY u.name NULLS LAST`,
     [id]
@@ -394,6 +394,9 @@ router.get('/reports/task/:id', async (req, res) => {
     return {
       employee_id: a.employee_id, name: a.name, department: a.department,
       location_name: a.location_name,
+      // 담당자가 실제 수행하는 세부업무 (배정별 체크리스트 우선, 없으면 업무 기본값)
+      checklist: (Array.isArray(a.checklist) && a.checklist.length) ? a.checklist
+        : (Array.isArray(task.checklist) ? task.checklist : []),
       done: st.status === 'done', done_count: st.doneCount, required: st.required,
       status: st.status, days_left: st.daysLeft,
       record: rec ? {
