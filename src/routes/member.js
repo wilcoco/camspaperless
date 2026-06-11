@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { query } from '../db.js';
 import { requireAuth } from '../auth.js';
 import { saveImage } from '../storage.js';
-import { periodKey, prevPeriodKey, computeStatus, CYCLE_LABELS } from '../periodicity.js';
+import { periodKey, prevPeriodKey, computeStatus, cycleLabel } from '../periodicity.js';
 
 const router = Router();
 router.use(requireAuth);
@@ -33,17 +33,18 @@ async function loadMyAssignments(employeeId) {
 
   const out = [];
   for (const t of rows) {
-    const curKey = periodKey(today, t.cycle_type, t.cycle_days, t.start_date);
-    const prevKey = prevPeriodKey(today, t.cycle_type, t.cycle_days, t.start_date);
+    const curKey = periodKey(today, t);
+    const prevKey = prevPeriodKey(today, t);
     const recs = (await query(
       `SELECT * FROM records WHERE assignment_id = $1 AND period_key IN ($2, $3)
        ORDER BY performed_at DESC`,
       [t.assignment_id, curKey, prevKey]
     )).rows;
     const cur = recs.find((r) => r.period_key === curKey) || null;
-    const donePrev = recs.some((r) => r.period_key === prevKey);
+    const curCount = recs.filter((r) => r.period_key === curKey).length;
+    const prevCount = recs.filter((r) => r.period_key === prevKey).length;
     const since = maxDate(t.start_date, t.assignment_created_at);
-    const st = computeStatus(today, t, !!cur, donePrev, since);
+    const st = computeStatus(today, t, curCount, prevCount, since);
     out.push({
       assignment_id: t.assignment_id,
       task_id: t.id,
@@ -53,7 +54,9 @@ async function loadMyAssignments(employeeId) {
       // 장소/체크리스트/GPS 는 배정(구성원)별 값을 우선, 없으면 업무 기본값
       location_name: t.asg_location != null ? t.asg_location : t.location_name,
       cycle_type: t.cycle_type,
-      cycle_label: CYCLE_LABELS[t.cycle_type] || t.cycle_type,
+      cycle_label: cycleLabel(t),
+      times_per_period: st.required,
+      done_count: st.doneCount,
       require_photo: t.require_photo,
       require_gps: t.require_gps,
       require_qr: t.require_qr,
@@ -64,7 +67,7 @@ async function loadMyAssignments(employeeId) {
       status: st.status,
       days_left: st.daysLeft,
       period_end: st.periodEnd,
-      done: !!cur,
+      done: st.status === 'done',
       last_record: cur ? { performed_at: cur.performed_at, note: cur.note, issue: cur.status === 'issue' } : null,
     });
   }
@@ -92,7 +95,7 @@ router.post('/records', async (req, res) => {
 
   const assignment = (await query(
     `SELECT t.require_photo, t.require_gps, t.require_qr,
-            t.cycle_type, t.cycle_days, t.start_date,
+            t.cycle_type, t.cycle_days, t.cycle_interval, t.start_date,
             a.employee_id, a.qr_token AS asg_qr_token,
             a.id AS assignment_id, t.id AS task_id
      FROM assignments a JOIN tasks t ON t.id = a.task_id
@@ -139,39 +142,45 @@ router.post('/records', async (req, res) => {
     }
   }
 
-  // 체크리스트 항목별 입력 처리 (타입: check/text/photo/gps/qr)
+  // 체크리스트 항목별 입력 처리 — 항목당 증빙 조합 (inputs: check/text/photo/gps/qr)
+  // 구버전 데이터({label, type})는 inputs=[type] 으로 해석한다.
+  const VALID_INPUTS = ['check', 'text', 'photo', 'gps', 'qr'];
   const expectedQr = `CAMSP:A${assignment.assignment_id}:${assignment.asg_qr_token}`;
   const items = Array.isArray(b.checklist_results) ? b.checklist_results : [];
   const processedItems = [];
   for (const it of items) {
-    const out = { label: it.label, type: it.type || 'check' };
-    switch (out.type) {
-      case 'text':
-        out.text = it.text != null ? String(it.text) : '';
-        break;
-      case 'photo':
-        if (it.photo) {
-          try { out.photo_url = await saveImage(it.photo); }
-          catch (err) { console.error('[records] 항목 사진 저장 실패:', err.message); }
-        }
-        break;
-      case 'gps':
-        if (it.gps_lat != null && it.gps_lng != null) {
-          out.gps_lat = Number(it.gps_lat);
-          out.gps_lng = Number(it.gps_lng);
-        }
-        break;
-      case 'qr':
-        out.qr_verified = !!assignment.asg_qr_token && String(it.qr_payload || '') === expectedQr;
-        break;
-      default:
-        out.checked = !!it.checked;
+    let inputs = Array.isArray(it.inputs) ? it.inputs.filter((x) => VALID_INPUTS.includes(x)) : [];
+    if (!inputs.length) inputs = [VALID_INPUTS.includes(it.type) ? it.type : 'check'];
+    const out = { label: it.label, inputs };
+    for (const input of inputs) {
+      switch (input) {
+        case 'text':
+          out.text = it.text != null ? String(it.text) : '';
+          break;
+        case 'photo':
+          if (it.photo) {
+            try { out.photo_url = await saveImage(it.photo); }
+            catch (err) { console.error('[records] 항목 사진 저장 실패:', err.message); }
+          }
+          break;
+        case 'gps':
+          if (it.gps_lat != null && it.gps_lng != null) {
+            out.gps_lat = Number(it.gps_lat);
+            out.gps_lng = Number(it.gps_lng);
+          }
+          break;
+        case 'qr':
+          out.qr_verified = !!assignment.asg_qr_token && String(it.qr_payload || '') === expectedQr;
+          break;
+        default:
+          out.checked = !!it.checked;
+      }
     }
     processedItems.push(out);
   }
 
   const today = new Date();
-  const curKey = periodKey(today, assignment.cycle_type, assignment.cycle_days, assignment.start_date);
+  const curKey = periodKey(today, assignment);
 
   const { rows } = await query(
     `INSERT INTO records

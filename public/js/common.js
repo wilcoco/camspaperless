@@ -69,18 +69,15 @@ export function normalizeItemType(s) {
   if (!s) return 'check';
   return ITEM_TYPE_ALIASES[String(s).trim().toLowerCase()] || ITEM_TYPE_ALIASES[String(s).trim()] || 'check';
 }
-// textarea 한 줄 -> {label, type}.  "라벨 | 타입"
-export function parseChecklistLine(line) {
-  const parts = line.split('|');
-  const label = parts[0].trim();
-  const type = parts.length > 1 ? normalizeItemType(parts[1]) : 'check';
-  return { label, type };
-}
-// {label,type} -> textarea 한 줄
-export function checklistItemToLine(it) {
-  const label = it.label || it;
-  const type = normalizeItemType(it.type);
-  return type === 'check' ? label : `${label} | ${ITEM_TYPE_LABEL[type]}`;
+// 체크리스트 항목 정규화 → {label, inputs:[...]}
+// 신형 {label, inputs:[...]} / 구형 {label, type} / 문자열 모두 수용.
+export function normalizeItemInputs(it) {
+  if (typeof it === 'string') return { label: it, inputs: ['check'] };
+  let inputs = Array.isArray(it.inputs)
+    ? it.inputs.map(normalizeItemType).filter((v, i, a) => a.indexOf(v) === i)
+    : [];
+  if (!inputs.length) inputs = [normalizeItemType(it.type)];
+  return { label: it.label || '', inputs };
 }
 
 // 카메라 입력 이미지를 캔버스로 리사이즈/압축 → dataURL(jpeg)

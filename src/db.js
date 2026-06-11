@@ -120,5 +120,11 @@ export async function initSchema() {
       FROM tasks t WHERE a.task_id = t.id AND t.require_qr AND a.qr_token IS NULL;
   `);
 
+  // 마이그레이션: 주기 일반화 — 주기당 수행 횟수(times_per_period), 주기 간격(cycle_interval; 격주=weekly 2, 반기=monthly 6)
+  await query(`
+    ALTER TABLE tasks ADD COLUMN IF NOT EXISTS times_per_period INTEGER NOT NULL DEFAULT 1;
+    ALTER TABLE tasks ADD COLUMN IF NOT EXISTS cycle_interval INTEGER NOT NULL DEFAULT 1;
+  `);
+
   console.log('[db] 스키마 준비 완료');
 }

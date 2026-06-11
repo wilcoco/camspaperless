@@ -1,10 +1,61 @@
 import { api, getMe, logout, el, esc, toast, STATUS_LABEL, fmtDate,
-  parseChecklistLine, checklistItemToLine, ITEM_TYPE_LABEL } from '/js/common.js';
+  normalizeItemInputs } from '/js/common.js';
 
 const $ = (id) => document.getElementById(id);
 let me = null;
 let tasksCache = [];
 let map = null, mapLayer = null;
+
+/* ---------- 체크리스트 빌더 (항목별 증빙 조합) ---------- */
+const INPUT_DEFS = [
+  ['check', '✅ 체크'], ['text', '✏️ 텍스트'], ['photo', '📷 사진'], ['gps', '📍 위치'], ['qr', '🔳 QR'],
+];
+function createChecklistBuilder(containerId) {
+  const box = $(containerId);
+  let items = [];
+  function render() {
+    box.innerHTML = '';
+    items.forEach((it, i) => {
+      const row = el('<div class="cl-item"></div>');
+      const head = el('<div class="cl-head"></div>');
+      const inp = el('<input type="text" placeholder="항목명 (예: 압력게이지 점검)" />');
+      inp.value = it.label;
+      inp.oninput = (e) => { items[i].label = e.target.value; };
+      const del = el('<button type="button" class="cl-del" title="항목 삭제">&times;</button>');
+      del.onclick = () => { items.splice(i, 1); render(); };
+      head.appendChild(inp); head.appendChild(del);
+      row.appendChild(head);
+      const evi = el('<div class="evi"></div>');
+      INPUT_DEFS.forEach(([key, label]) => {
+        const b = el(`<button type="button">${label}</button>`);
+        if (it.inputs.includes(key)) b.classList.add('active');
+        b.onclick = () => {
+          const has = items[i].inputs.includes(key);
+          if (has && items[i].inputs.length === 1) return; // 증빙은 최소 1개
+          items[i].inputs = has ? items[i].inputs.filter((x) => x !== key) : [...items[i].inputs, key];
+          render();
+        };
+        evi.appendChild(b);
+      });
+      row.appendChild(evi);
+      box.appendChild(row);
+    });
+    const add = el('<button type="button" class="btn small secondary">+ 항목 추가</button>');
+    add.onclick = () => {
+      items.push({ label: '', inputs: ['check'] });
+      render();
+      const inputs = box.querySelectorAll('.cl-head input');
+      if (inputs.length) inputs[inputs.length - 1].focus();
+    };
+    box.appendChild(add);
+  }
+  render();
+  return {
+    set(list) { items = (Array.isArray(list) ? list : []).map(normalizeItemInputs); render(); },
+    get() { return items.filter((it) => it.label.trim()).map((it) => ({ label: it.label.trim(), inputs: it.inputs })); },
+  };
+}
+let taskCl = null, asgCl = null;
 
 init();
 
@@ -65,17 +116,92 @@ async function loadOverview() {
 }
 
 /* ---------- 업무관리 ---------- */
+// 주기 프리셋 — 칩 한 번으로 (단위, 간격, 횟수)를 지정. '직접 설정'은 상세 패널을 연다.
+const CYCLE_PRESETS = {
+  daily:      { cycle_type: 'daily',     cycle_interval: 1, times_per_period: 1 },
+  weekly:     { cycle_type: 'weekly',    cycle_interval: 1, times_per_period: 1 },
+  weekly2x:   { cycle_type: 'weekly',    cycle_interval: 1, times_per_period: 2 },
+  biweekly:   { cycle_type: 'weekly',    cycle_interval: 2, times_per_period: 1 },
+  monthly:    { cycle_type: 'monthly',   cycle_interval: 1, times_per_period: 1 },
+  quarterly:  { cycle_type: 'quarterly', cycle_interval: 1, times_per_period: 1 },
+  semiannual: { cycle_type: 'monthly',   cycle_interval: 6, times_per_period: 1 },
+  yearly:     { cycle_type: 'yearly',    cycle_interval: 1, times_per_period: 1 },
+};
+let editingStartDate = null; // 수정 중인 업무의 시작일 (미리보기 앵커용)
+
+function readCycleForm() {
+  return {
+    cycle_type: $('f_cycle').value,
+    cycle_days: parseInt($('f_cycle_days').value, 10) || 30,
+    cycle_interval: parseInt($('f_cycle_interval').value, 10) || 1,
+    times_per_period: parseInt($('f_times').value, 10) || 1,
+  };
+}
+
+function chipForState(s) {
+  for (const [key, p] of Object.entries(CYCLE_PRESETS)) {
+    const interval = (s.cycle_type === 'weekly' || s.cycle_type === 'monthly') ? s.cycle_interval : 1;
+    if (p.cycle_type === s.cycle_type && p.cycle_interval === interval && p.times_per_period === s.times_per_period) return key;
+  }
+  return 'advanced';
+}
+
+function setCyclePreset(key) {
+  document.querySelectorAll('#cycleChips button').forEach((b) => b.classList.toggle('active', b.dataset.preset === key));
+  $('cycleAdvanced').style.display = key === 'advanced' ? '' : 'none';
+  const p = CYCLE_PRESETS[key];
+  if (p) {
+    $('f_cycle').value = p.cycle_type;
+    $('f_cycle_interval').value = p.cycle_interval;
+    $('f_times').value = p.times_per_period;
+  }
+  updateCycleUI();
+  updateCyclePreview();
+}
+
+function updateCycleUI() {
+  const t = $('f_cycle').value;
+  $('cycleIntervalWrap').style.display = (t === 'weekly' || t === 'monthly') ? '' : 'none';
+  $('cycleDaysWrap').style.display = t === 'custom' ? '' : 'none';
+}
+
+let previewTimer = null;
+function updateCyclePreview() {
+  clearTimeout(previewTimer);
+  previewTimer = setTimeout(async () => {
+    const s = readCycleForm();
+    const params = new URLSearchParams({
+      cycle_type: s.cycle_type, cycle_days: s.cycle_days,
+      cycle_interval: s.cycle_interval, times_per_period: s.times_per_period,
+    });
+    if (editingStartDate) params.set('start_date', editingStartDate);
+    try {
+      const p = await api('/api/admin/cycle-preview?' + params.toString());
+      $('cyclePreview').textContent = `📅 ${p.label} · 이번 주기 ${p.current.start} ~ ${p.current.end}` +
+        (p.required > 1 ? ` (${p.required}회 수행)` : '') + ` · 다음 주기 ${p.next.start} ~`;
+    } catch { $('cyclePreview').textContent = ''; }
+  }, 250);
+}
+
 function bindTaskForm() {
-  $('f_cycle').onchange = (e) => { $('cycleDaysWrap').style.display = e.target.value === 'custom' ? '' : 'none'; };
+  taskCl = createChecklistBuilder('f_checklistBuilder');
+  document.querySelectorAll('#cycleChips button').forEach((b) => b.onclick = () => setCyclePreset(b.dataset.preset));
+  ['f_cycle', 'f_cycle_interval', 'f_cycle_days', 'f_times'].forEach((id) => {
+    $(id).onchange = () => { updateCycleUI(); updateCyclePreview(); };
+  });
   $('taskResetBtn').onclick = resetTaskForm;
   $('taskForm').onsubmit = saveTask;
+  updateCycleUI();
+  updateCyclePreview();
 }
 
 function resetTaskForm() {
   $('taskId').value = '';
   $('taskForm').reset();
   $('f_photo').checked = true;
-  $('cycleDaysWrap').style.display = 'none';
+  editingStartDate = null;
+  taskCl.set([]);
+  setCyclePreset('monthly');
   $('taskFormTitle').textContent = '새 업무 등록';
   $('taskErr').textContent = '';
 }
@@ -84,19 +210,20 @@ async function saveTask(e) {
   e.preventDefault();
   $('taskErr').textContent = '';
   const id = $('taskId').value;
-  const checklist = $('f_checklist').value.split('\n').map((s) => s.trim()).filter(Boolean).map(parseChecklistLine);
+  const s = readCycleForm();
   const body = {
     title: $('f_title').value.trim(),
     category: $('f_category').value.trim(),
-    location_name: $('f_location').value.trim(),
     description: $('f_description').value.trim(),
-    cycle_type: $('f_cycle').value,
-    cycle_days: parseInt($('f_cycle_days').value, 10) || 30,
+    cycle_type: s.cycle_type,
+    cycle_days: s.cycle_days,
+    cycle_interval: s.cycle_interval,
+    times_per_period: s.times_per_period,
     warn_before_days: parseInt($('f_warn').value, 10) || 3,
     require_photo: $('f_photo').checked,
     require_gps: $('f_gps').checked,
     require_qr: $('f_qr').checked,
-    checklist,
+    checklist: taskCl.get(),
   };
   try {
     if (id) await api('/api/admin/tasks/' + id, { method: 'PUT', body });
@@ -134,16 +261,18 @@ function fillTaskForm(t) {
   $('taskId').value = t.id;
   $('f_title').value = t.title || '';
   $('f_category').value = t.category || '';
-  $('f_location').value = t.location_name || '';
   $('f_description').value = t.description || '';
   $('f_cycle').value = t.cycle_type;
-  $('cycleDaysWrap').style.display = t.cycle_type === 'custom' ? '' : 'none';
+  $('f_cycle_interval').value = t.cycle_interval || 1;
   $('f_cycle_days').value = t.cycle_days || 30;
+  $('f_times').value = t.times_per_period || 1;
+  editingStartDate = t.start_date ? String(t.start_date).slice(0, 10) : null;
+  setCyclePreset(chipForState(readCycleForm()));
   $('f_warn').value = t.warn_before_days;
   $('f_photo').checked = t.require_photo;
   $('f_gps').checked = t.require_gps;
   $('f_qr').checked = t.require_qr;
-  $('f_checklist').value = (Array.isArray(t.checklist) ? t.checklist : []).map(checklistItemToLine).join('\n');
+  taskCl.set(t.checklist);
   $('taskFormTitle').textContent = '업무 수정 (#' + t.id + ')';
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
@@ -351,6 +480,7 @@ async function loadAssignments() {
 
 /* ---------- 배정 편집 모달 ---------- */
 function bindAsgModal() {
+  asgCl = createChecklistBuilder('asg_checklistBuilder');
   $('asgModalClose').onclick = () => $('asgModalBg').classList.remove('open');
   $('asgModalBg').addEventListener('click', (e) => { if (e.target.id === 'asgModalBg') $('asgModalBg').classList.remove('open'); });
   $('asgSaveBtn').onclick = saveAsg;
@@ -359,7 +489,7 @@ function openAsgModal(a) {
   $('asg_id').value = a.id;
   $('asgModalTitle').textContent = `${a.name || a.employee_id} · 구역/체크리스트`;
   $('asg_location').value = a.location_name || '';
-  $('asg_checklist').value = (Array.isArray(a.checklist) ? a.checklist : []).map(checklistItemToLine).join('\n');
+  asgCl.set(a.checklist);
   $('asg_lat').value = a.gps_lat ?? '';
   $('asg_lng').value = a.gps_lng ?? '';
   $('asgErr').textContent = '';
@@ -367,7 +497,7 @@ function openAsgModal(a) {
 }
 async function saveAsg() {
   const id = $('asg_id').value;
-  const checklist = $('asg_checklist').value.split('\n').map((s) => s.trim()).filter(Boolean).map(parseChecklistLine);
+  const checklist = asgCl.get();
   const body = {
     location_name: $('asg_location').value.trim(),
     checklist,
@@ -401,9 +531,10 @@ async function loadReport() {
     <div class="small muted" style="margin-bottom:8px">${esc(task.cycle_label)} · 주기 ${esc(period_key)}</div>`;
   rows.forEach((r) => {
     const rec = r.record;
-    const sub = rec
+    const times = r.required > 1 ? `${r.done_count}/${r.required}회 · ` : '';
+    const sub = times + (rec
       ? `${fmtDate(rec.performed_at)}${rec.qr_verified ? ' · 🔳QR' : ''}${rec.gps_lat ? ' · 📍GPS' : ''}${rec.note ? ' · ' + esc(rec.note) : ''}`
-      : '미수행';
+      : '미수행');
     const item = el(`<div class="list-item" style="flex-direction:column;align-items:stretch">
       <div style="display:flex;justify-content:space-between;align-items:center">
         <div><div class="title">${esc(r.name || r.employee_id)} ${rec && rec.issue ? '<span class="badge issue">특이</span>' : ''}</div>
@@ -424,20 +555,21 @@ async function loadReport() {
   });
 }
 
-// 체크리스트 항목 결과 한 줄 렌더
+// 체크리스트 항목 결과 한 줄 렌더 — 증빙 조합(inputs) 또는 구형(type) 결과 모두 처리
 function renderResult(c) {
-  const label = `<b>${esc(c.label || '')}</b>`;
-  switch (c.type) {
-    case 'text': return `${label}: ${esc(c.text || '-')}`;
-    case 'photo': return c.photo_url
-      ? `${label}: <a href="${esc(c.photo_url)}" target="_blank">📷 사진</a>`
-      : `${label}: 사진 없음`;
-    case 'gps': return c.gps_lat != null
-      ? `${label}: 📍 ${Number(c.gps_lat).toFixed(5)}, ${Number(c.gps_lng).toFixed(5)}`
-      : `${label}: 위치 없음`;
-    case 'qr': return `${label}: ${c.qr_verified ? '🔳 인증됨' : '미인증'}`;
-    default: return `${c.checked ? '✅' : '⬜'} ${esc(c.label || '')}`;
-  }
+  const inputs = (Array.isArray(c.inputs) && c.inputs.length) ? c.inputs : [c.type || 'check'];
+  const parts = inputs.map((t) => {
+    switch (t) {
+      case 'text': return esc(c.text || '-');
+      case 'photo': return c.photo_url
+        ? `<a href="${esc(c.photo_url)}" target="_blank">📷 사진</a>` : '사진 없음';
+      case 'gps': return c.gps_lat != null
+        ? `📍 ${Number(c.gps_lat).toFixed(5)}, ${Number(c.gps_lng).toFixed(5)}` : '위치 없음';
+      case 'qr': return c.qr_verified ? '🔳 인증됨' : 'QR 미인증';
+      default: return c.checked ? '✅ 완료' : '⬜ 미체크';
+    }
+  });
+  return `<b>${esc(c.label || '')}</b>: ${parts.join(' · ')}`;
 }
 
 /* ---------- 지도 ---------- */

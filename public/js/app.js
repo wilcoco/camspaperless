@@ -1,5 +1,5 @@
 import { api, getMe, logout, el, esc, toast, STATUS_LABEL, compressImage, getPosition, fmtDate,
-  ITEM_TYPE_LABEL, normalizeItemType } from '/js/common.js';
+  ITEM_TYPE_LABEL, normalizeItemInputs } from '/js/common.js';
 
 let me = null;
 let current = null;        // 현재 모달의 assignment
@@ -59,7 +59,8 @@ function renderTasks(assignments) {
   if (!assignments.length) { box.innerHTML = '<div class="empty">배정된 업무가 없습니다.</div>'; return; }
   box.innerHTML = '';
   assignments.forEach((a) => {
-    const meta = `${a.cycle_label} · ${esc(a.location_name || '장소 미지정')} · 마감 ~${a.period_end}` +
+    const times = a.times_per_period > 1 ? ` · ${a.done_count}/${a.times_per_period}회` : '';
+    const meta = `${a.cycle_label} · ${esc(a.location_name || '장소 미지정')} · 마감 ~${a.period_end}${times}` +
       (a.done && a.last_record ? ` · 완료 ${fmtDate(a.last_record.performed_at).slice(5, 16)}` : '');
     const item = el(`<div class="list-item">
       <div><div class="title">${esc(a.title)}</div><div class="meta">${meta}</div></div>
@@ -99,7 +100,8 @@ function bindModal() {
 function openModal(a) {
   current = a; photoData = null; gps = null; qrPayload = null;
   $('mTitle').textContent = a.title;
-  $('mMeta').textContent = `${a.cycle_label} · ${a.location_name || ''} · 마감 ~${a.period_end}`;
+  $('mMeta').textContent = `${a.cycle_label} · ${a.location_name || ''} · 마감 ~${a.period_end}` +
+    (a.times_per_period > 1 ? ` · 이번 주기 ${a.done_count}/${a.times_per_period}회` : '');
   $('noteInput').value = '';
   $('issueChk').checked = false;
   $('photoInput').value = '';
@@ -122,52 +124,53 @@ function openModal(a) {
   $('modalBg').classList.add('open');
 }
 
-// 항목 타입별 입력 UI 렌더
+// 항목별 입력 UI 렌더 — 한 항목에 여러 증빙(inputs 조합)이 붙을 수 있다.
 function renderChecklist(a) {
   const cb = $('checklistBox'); cb.innerHTML = '';
-  const items = (Array.isArray(a.checklist) ? a.checklist : []).map((it) => ({
-    label: it.label || it, type: normalizeItemType(it.type),
-  }));
+  const items = (Array.isArray(a.checklist) ? a.checklist : []).map(normalizeItemInputs);
   itemState = items.map((it) => ({ ...it }));
   if (!items.length) return;
 
   cb.appendChild(el('<label>체크리스트</label>'));
   items.forEach((it, i) => {
     const row = el('<div class="card" style="padding:12px;margin-bottom:8px;box-shadow:none"></div>');
-    row.appendChild(el(`<div style="font-weight:600;margin-bottom:6px">${esc(it.label)} <span class="chip">${ITEM_TYPE_LABEL[it.type]}</span></div>`));
+    const chips = it.inputs.map((t) => `<span class="chip">${ITEM_TYPE_LABEL[t]}</span>`).join('');
+    row.appendChild(el(`<div style="font-weight:600;margin-bottom:6px">${esc(it.label)} ${chips}</div>`));
 
-    if (it.type === 'check') {
-      const c = el(`<div class="checkrow"><input type="checkbox" id="ci_${i}"><label for="ci_${i}">완료</label></div>`);
-      c.querySelector('input').onchange = (e) => { itemState[i].checked = e.target.checked; };
-      row.appendChild(c);
-    } else if (it.type === 'text') {
-      const inp = el('<input type="text" placeholder="입력하세요" />');
-      inp.oninput = (e) => { itemState[i].text = e.target.value; };
-      row.appendChild(inp);
-    } else if (it.type === 'photo') {
-      const inp = el('<input type="file" accept="image/*" capture="environment" />');
-      const prev = el('<img class="photo-preview" />');
-      inp.onchange = async (e) => {
-        const f = e.target.files[0]; if (!f) return;
-        itemState[i].photo = await compressImage(f);
-        prev.src = itemState[i].photo; prev.style.display = 'block';
-      };
-      row.appendChild(inp); row.appendChild(prev);
-    } else if (it.type === 'gps') {
-      const btn = el('<button class="btn secondary" type="button">📍 위치 가져오기</button>');
-      const info = el('<div class="small muted" style="margin-top:6px"></div>');
-      btn.onclick = async () => {
-        info.textContent = '위치 확인 중...';
-        try { const p = await getPosition(); itemState[i].gps_lat = p.lat; itemState[i].gps_lng = p.lng; info.innerHTML = `✅ ${p.lat.toFixed(5)}, ${p.lng.toFixed(5)}`; }
-        catch (err) { info.textContent = err.message; }
-      };
-      row.appendChild(btn); row.appendChild(info);
-    } else if (it.type === 'qr') {
-      const btn = el('<button class="btn secondary" type="button">📷 QR 스캔</button>');
-      const reader = el(`<div id="ireader_${i}" class="scanner-box"></div>`);
-      const info = el('<div class="small" style="margin-top:6px"></div>');
-      btn.onclick = () => scanInto(i, `ireader_${i}`, btn, info);
-      row.appendChild(btn); row.appendChild(reader); row.appendChild(info);
+    for (const input of it.inputs) {
+      if (input === 'check') {
+        const c = el(`<div class="checkrow"><input type="checkbox" id="ci_${i}"><label for="ci_${i}">완료</label></div>`);
+        c.querySelector('input').onchange = (e) => { itemState[i].checked = e.target.checked; };
+        row.appendChild(c);
+      } else if (input === 'text') {
+        const inp = el('<input type="text" placeholder="입력하세요" />');
+        inp.oninput = (e) => { itemState[i].text = e.target.value; };
+        row.appendChild(inp);
+      } else if (input === 'photo') {
+        const inp = el('<input type="file" accept="image/*" capture="environment" />');
+        const prev = el('<img class="photo-preview" />');
+        inp.onchange = async (e) => {
+          const f = e.target.files[0]; if (!f) return;
+          itemState[i].photo = await compressImage(f);
+          prev.src = itemState[i].photo; prev.style.display = 'block';
+        };
+        row.appendChild(inp); row.appendChild(prev);
+      } else if (input === 'gps') {
+        const btn = el('<button class="btn secondary" type="button">📍 위치 가져오기</button>');
+        const info = el('<div class="small muted" style="margin-top:6px"></div>');
+        btn.onclick = async () => {
+          info.textContent = '위치 확인 중...';
+          try { const p = await getPosition(); itemState[i].gps_lat = p.lat; itemState[i].gps_lng = p.lng; info.innerHTML = `✅ ${p.lat.toFixed(5)}, ${p.lng.toFixed(5)}`; }
+          catch (err) { info.textContent = err.message; }
+        };
+        row.appendChild(btn); row.appendChild(info);
+      } else if (input === 'qr') {
+        const btn = el('<button class="btn secondary" type="button">📷 QR 스캔</button>');
+        const reader = el(`<div id="ireader_${i}" class="scanner-box"></div>`);
+        const info = el('<div class="small" style="margin-top:6px"></div>');
+        btn.onclick = () => scanInto(i, `ireader_${i}`, btn, info);
+        row.appendChild(btn); row.appendChild(reader); row.appendChild(info);
+      }
     }
     cb.appendChild(row);
   });
@@ -233,20 +236,20 @@ async function submitRecord() {
   if (a.require_gps && !gps) { err.textContent = '현재 위치를 가져오세요.'; return; }
   if (a.require_qr && !qrPayload) { err.textContent = '현장 QR을 스캔하세요.'; return; }
 
-  // 체크리스트 항목별 입력 수집 + 필수 검증
+  // 체크리스트 항목별 입력 수집(증빙 조합) + 필수 검증
   const checklist_results = itemState.map((it) => {
-    const r = { label: it.label, type: it.type };
-    if (it.type === 'check') r.checked = !!it.checked;
-    else if (it.type === 'text') r.text = it.text || '';
-    else if (it.type === 'photo') r.photo = it.photo || null;
-    else if (it.type === 'gps') { r.gps_lat = it.gps_lat; r.gps_lng = it.gps_lng; }
-    else if (it.type === 'qr') r.qr_payload = it.qr_payload || '';
+    const r = { label: it.label, inputs: it.inputs };
+    if (it.inputs.includes('check')) r.checked = !!it.checked;
+    if (it.inputs.includes('text')) r.text = it.text || '';
+    if (it.inputs.includes('photo')) r.photo = it.photo || null;
+    if (it.inputs.includes('gps')) { r.gps_lat = it.gps_lat; r.gps_lng = it.gps_lng; }
+    if (it.inputs.includes('qr')) r.qr_payload = it.qr_payload || '';
     return r;
   });
   for (const it of itemState) {
-    if (it.type === 'photo' && !it.photo) { err.textContent = `'${it.label}' 항목 사진을 첨부하세요.`; return; }
-    if (it.type === 'gps' && it.gps_lat == null) { err.textContent = `'${it.label}' 항목 위치를 가져오세요.`; return; }
-    if (it.type === 'qr' && !(it.qr_payload && it.qr_payload.startsWith(`CAMSP:A${a.assignment_id}:`))) {
+    if (it.inputs.includes('photo') && !it.photo) { err.textContent = `'${it.label}' 항목 사진을 첨부하세요.`; return; }
+    if (it.inputs.includes('gps') && it.gps_lat == null) { err.textContent = `'${it.label}' 항목 위치를 가져오세요.`; return; }
+    if (it.inputs.includes('qr') && !(it.qr_payload && it.qr_payload.startsWith(`CAMSP:A${a.assignment_id}:`))) {
       err.textContent = `'${it.label}' 항목 QR을 스캔하세요.`; return;
     }
   }

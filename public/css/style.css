@@ -128,3 +128,17 @@ textarea { resize: vertical; min-height: 70px; }
 
 .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #111827; color: #fff; padding: 11px 18px; border-radius: 10px; font-size: 14px; z-index: 100; opacity: 0; transition: opacity .2s; pointer-events: none; }
 .toast.show { opacity: 1; }
+
+/* 주기 프리셋 칩 */
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 10px; }
+.chips button { width: auto; border: 1px solid var(--line); background: #fff; color: var(--text); border-radius: 999px; padding: 7px 13px; font-size: 13px; cursor: pointer; }
+.chips button.active { background: var(--primary); border-color: var(--primary); color: #fff; font-weight: 700; }
+
+/* 체크리스트 빌더 (항목별 증빙 조합) */
+.cl-item { border: 1px solid var(--line); border-radius: 10px; padding: 10px; margin-bottom: 8px; }
+.cl-item .cl-head { display: flex; gap: 8px; align-items: center; }
+.cl-item .cl-head input { flex: 1; margin: 0; }
+.cl-item .cl-del { background: none; border: 0; color: var(--muted); font-size: 18px; cursor: pointer; width: auto; padding: 0 4px; }
+.evi { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
+.evi button { width: auto; border: 1px solid var(--line); background: #fff; color: var(--muted); border-radius: 8px; padding: 5px 9px; font-size: 12px; cursor: pointer; }
+.evi button.active { background: #eef4ff; border-color: var(--primary); color: var(--primary); font-weight: 600; }

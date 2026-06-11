@@ -50,29 +50,55 @@
           <input id="f_category" placeholder="예: 안전" />
           <label>설명</label>
           <textarea id="f_description" placeholder="점검 방법, 주의사항 등"></textarea>
+          <label>점검 주기</label>
+          <div class="chips" id="cycleChips">
+            <button type="button" data-preset="daily">매일</button>
+            <button type="button" data-preset="weekly">매주</button>
+            <button type="button" data-preset="weekly2x">주 2회</button>
+            <button type="button" data-preset="biweekly">격주</button>
+            <button type="button" data-preset="monthly" class="active">매월</button>
+            <button type="button" data-preset="quarterly">분기</button>
+            <button type="button" data-preset="semiannual">반기</button>
+            <button type="button" data-preset="yearly">매년</button>
+            <button type="button" data-preset="advanced">직접 설정</button>
+          </div>
+          <div id="cycleAdvanced" style="display:none">
+            <div class="row">
+              <div>
+                <label>반복 단위</label>
+                <select id="f_cycle">
+                  <option value="daily">매일</option>
+                  <option value="weekly">주</option>
+                  <option value="monthly" selected>월</option>
+                  <option value="quarterly">분기</option>
+                  <option value="yearly">년</option>
+                  <option value="custom">N일마다</option>
+                </select>
+              </div>
+              <div id="cycleIntervalWrap">
+                <label>간격 (매 N주/월)</label>
+                <input id="f_cycle_interval" type="number" min="1" value="1" />
+              </div>
+              <div id="cycleDaysWrap" style="display:none">
+                <label>주기 일수(N)</label>
+                <input id="f_cycle_days" type="number" min="1" value="30" />
+              </div>
+              <div>
+                <label>주기당 수행 횟수</label>
+                <input id="f_times" type="number" min="1" value="1" />
+              </div>
+            </div>
+          </div>
+          <div class="small muted" id="cyclePreview" style="margin:2px 0 8px"></div>
           <div class="row">
-            <div>
-              <label>점검 주기</label>
-              <select id="f_cycle">
-                <option value="daily">매일</option>
-                <option value="weekly">매주</option>
-                <option value="monthly" selected>매월</option>
-                <option value="quarterly">분기</option>
-                <option value="yearly">매년</option>
-                <option value="custom">사용자정의(N일)</option>
-              </select>
-            </div>
-            <div id="cycleDaysWrap" style="display:none">
-              <label>주기 일수(N)</label>
-              <input id="f_cycle_days" type="number" min="1" value="30" />
-            </div>
             <div><label>마감 N일 전 워닝</label><input id="f_warn" type="number" min="0" value="3" /></div>
           </div>
-          <div class="checkrow"><input type="checkbox" id="f_photo" checked /><label for="f_photo">사진 첨부 필수</label></div>
+          <label>전체 제출 단위 증빙 <span class="muted small">(항목별 증빙은 아래 체크리스트에서 지정)</span></label>
+          <div class="checkrow"><input type="checkbox" id="f_photo" checked /><label for="f_photo">대표 사진 1장 필수</label></div>
           <div class="checkrow"><input type="checkbox" id="f_gps" /><label for="f_gps">GPS 위치 필수</label></div>
           <div class="checkrow"><input type="checkbox" id="f_qr" /><label for="f_qr">현장 QR 인증 필수 <span class="muted small">(구역별 QR은 배정에서 발급)</span></label></div>
-          <label>세부 테스크 (체크리스트) <span class="muted small">(한 줄에 하나 · 형식: <b>항목명 | 타입</b> · 타입: 체크/텍스트/사진/위치/QR · 생략 시 체크)</span></label>
-          <textarea id="f_checklist" placeholder="압력게이지 정상&#10;계기판 수치 | 텍스트&#10;외관 사진 | 사진&#10;설치 위치 | 위치&#10;현장 확인 | QR"></textarea>
+          <label>세부 테스크 (체크리스트) <span class="muted small">(항목마다 필요한 입력·증빙을 골라 붙이세요)</span></label>
+          <div id="f_checklistBuilder"></div>
           <div style="height:10px"></div>
           <div class="row">
             <button class="btn" type="submit" id="taskSaveBtn">저장</button>
@@ -180,8 +206,8 @@
       <input type="hidden" id="asg_id" />
       <label>담당 구역/장소</label>
       <input id="asg_location" placeholder="예: 본관 3층 동편" />
-      <label>체크리스트 항목 <span class="muted small">(형식: 항목명 | 타입 · 타입: 체크/텍스트/사진/위치/QR)</span></label>
-      <textarea id="asg_checklist" placeholder="소화기 위치 | 위치&#10;외관 사진 | 사진&#10;특이사항 | 텍스트"></textarea>
+      <label>체크리스트 항목 <span class="muted small">(항목마다 필요한 입력·증빙을 골라 붙이세요)</span></label>
+      <div id="asg_checklistBuilder"></div>
       <div class="row">
         <div><label>기준 위도(GPS, 선택)</label><input id="asg_lat" type="number" step="any" placeholder="37.5665" /></div>
         <div><label>기준 경도(GPS, 선택)</label><input id="asg_lng" type="number" step="any" placeholder="126.978" /></div>
