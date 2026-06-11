@@ -28,8 +28,11 @@ app.use('/api/me', memberRoutes);
 app.use('/api/images', imageRoutes);
 app.use('/api/diag', diagRoutes);
 
-// 정적 프론트엔드
-app.use(express.static(path.join(__dirname, 'public')));
+// 정적 프론트엔드 — 배포 직후 신/구 JS가 섞여 캐시되면 화면이 통째로 죽으므로
+// 항상 재검증(no-cache)하게 한다. 파일이 그대로면 304라 비용은 거의 없다.
+app.use(express.static(path.join(__dirname, 'public'), {
+  setHeaders(res) { res.setHeader('Cache-Control', 'no-cache'); },
+}));
 
 // 공통 에러 핸들러
 app.use((err, req, res, _next) => {

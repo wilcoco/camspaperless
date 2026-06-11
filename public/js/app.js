@@ -1,5 +1,5 @@
 import { api, getMe, logout, el, esc, toast, STATUS_LABEL, compressImage, getPosition, fmtDate,
-  ITEM_TYPE_LABEL, normalizeItemInputs } from '/js/common.js';
+  ITEM_TYPE_LABEL, normalizeItemInputs } from '/js/common.js?v=2';
 
 let me = null;
 let current = null;        // 현재 모달의 assignment

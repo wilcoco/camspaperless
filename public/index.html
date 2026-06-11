@@ -27,7 +27,7 @@
   </div>
 
   <script type="module">
-    import { api, getMe } from '/js/common.js';
+    import { api, getMe } from '/js/common.js?v=2';
 
     // 이미 로그인 상태면 이동
     getMe().then((u) => { if (u) location.href = u.role === 'admin' ? '/admin.html' : '/app.html'; });

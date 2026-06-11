@@ -1,5 +1,5 @@
 import { api, getMe, logout, el, esc, toast, STATUS_LABEL, fmtDate,
-  normalizeItemInputs } from '/js/common.js';
+  normalizeItemInputs } from '/js/common.js?v=2';
 
 const $ = (id) => document.getElementById(id);
 let me = null;
