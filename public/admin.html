@@ -146,7 +146,26 @@
         <label>업무 선택</label>
         <select id="assignTaskSel"></select>
 
-        <label style="margin-top:14px">배정 대상</label>
+        <label style="margin-top:14px">배정 방식</label>
+        <div class="tabs" id="assignModeTabs" style="margin-bottom:10px">
+          <button data-mode="detail" class="active">세부업무별 매칭</button>
+          <button data-mode="bulk">일괄 배정 (전원 동일)</button>
+        </div>
+
+        <!-- 세부업무별 담당자 매칭: 업무 → 세부업무 → 담당자 -->
+        <div id="assignDetail">
+          <div class="row" style="margin-bottom:8px">
+            <select id="matchDeptFilter"></select>
+          </div>
+          <div id="matchBoard"><div class="empty">업무를 선택하세요.</div></div>
+          <button class="btn" id="matchSaveBtn" style="margin-top:14px">매칭 저장</button>
+          <div class="small muted" style="margin-top:6px">세부업무마다 담당자를 정하면, 담당자별로 <b>맡은 항목만 들어간 배정</b>이 생성·갱신됩니다. 같은 사람이 여러 항목을 맡을 수 있습니다.</div>
+          <div class="error" id="matchErr"></div>
+        </div>
+
+        <!-- 일괄 배정: 전원이 동일한 세부업무 수행 -->
+        <div id="assignBulk" hidden>
+        <label>배정 대상</label>
         <div class="tabs" id="targetTabs" style="margin-bottom:10px">
           <button data-target="all" class="active">전체</button>
           <button data-target="team">팀(부서)</button>
@@ -172,6 +191,7 @@
         <button class="btn" id="assignAddBtn" style="margin-top:14px">선택한 대상에 배정</button>
         <div class="small muted" style="margin-top:6px">배정 후 각 담당자의 <b>담당 구역·세부 항목</b>은 아래 목록에서 개별 편집할 수 있습니다.</div>
         <div class="error" id="assignErr"></div>
+        </div>
         <h2 style="margin-top:18px">현재 담당자</h2>
         <div id="assignList"><div class="empty">업무를 선택하세요.</div></div>
       </div>

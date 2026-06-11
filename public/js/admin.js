@@ -86,7 +86,7 @@ function setupTabs() {
     if (tab === 'overview') loadOverview();
     if (tab === 'tasks') loadTasks();
     if (tab === 'members') loadMembers();
-    if (tab === 'assign') loadTaskSelectors().then(() => { loadAssignments(); loadTargets(); });
+    if (tab === 'assign') loadTaskSelectors().then(loadTargets).then(loadAssignments);
     if (tab === 'report') loadTaskSelectors();
     if (tab === 'map') { loadTaskSelectors(); setTimeout(() => map && map.invalidateSize(), 100); }
   });
@@ -392,11 +392,21 @@ function renderMembers(q, dept) {
 
 /* ---------- 배정 ---------- */
 let assignTarget = 'all';
+let assignMode = 'detail';
 function bindAssign() {
   $('assignTaskSel').onchange = loadAssignments;
   $('assignAddBtn').onclick = doAssign;
   $('indivFilter').oninput = renderIndivFiltered;
   $('indivDeptFilter').onchange = renderIndivFiltered;
+  $('matchSaveBtn').onclick = saveMatching;
+  $('matchDeptFilter').onchange = renderMatchRows;
+  document.querySelectorAll('#assignModeTabs button').forEach((b) => b.onclick = () => {
+    document.querySelectorAll('#assignModeTabs button').forEach((x) => x.classList.remove('active'));
+    b.classList.add('active');
+    assignMode = b.dataset.mode;
+    $('assignDetail').hidden = assignMode !== 'detail';
+    $('assignBulk').hidden = assignMode !== 'bulk';
+  });
   document.querySelectorAll('#targetTabs button').forEach((b) => b.onclick = () => {
     document.querySelectorAll('#targetTabs button').forEach((x) => x.classList.remove('active'));
     b.classList.add('active');
@@ -416,6 +426,7 @@ async function loadTargets() {
     : '<option value="">등록된 부서 없음</option>';
   // 개인 선택은 부서로 먼저 거른다 — 기본값은 첫 부서(전체 명단을 한 번에 안 보여줌)
   fillDeptSelect('indivDeptFilter', '전체 부서');
+  fillDeptSelect('matchDeptFilter', '전체 부서');
   const ds = departments();
   if (ds.length) $('indivDeptFilter').value = ds[0];
   renderIndivFiltered();
@@ -464,8 +475,13 @@ async function doAssign() {
 async function loadAssignments() {
   const box = $('assignList');
   const taskId = $('assignTaskSel').value;
-  if (!taskId) { box.innerHTML = '<div class="empty">업무를 선택하세요.</div>'; return; }
+  if (!taskId) {
+    box.innerHTML = '<div class="empty">업무를 선택하세요.</div>';
+    $('matchBoard').innerHTML = '<div class="empty">업무를 선택하세요.</div>';
+    return;
+  }
   const { assignments } = await api('/api/admin/tasks/' + taskId + '/assignments');
+  buildMatchBoard(taskId, assignments);
   if (!assignments.length) { box.innerHTML = '<div class="empty">배정된 담당자가 없습니다.</div>'; return; }
   box.innerHTML = '';
   assignments.forEach((a) => {
@@ -489,6 +505,104 @@ async function loadAssignments() {
     actions.appendChild(del);
     box.appendChild(item);
   });
+}
+
+/* ---------- 세부업무별 담당자 매칭 (업무 → 세부업무 → 담당자) ---------- */
+let matchState = [];               // [{label, inputs, employee_id}]
+let matchPrevOwners = new Set();   // 보드 로드 시점에 세부업무를 맡고 있던 사번 (해제 판단용)
+
+function buildMatchBoard(taskId, assignments) {
+  const task = tasksCache.find((t) => String(t.id) === String(taskId));
+  const items = (task && Array.isArray(task.checklist) ? task.checklist : []).map(normalizeItemInputs);
+  if (!items.length) {
+    $('matchBoard').innerHTML = '<div class="empty">이 업무에 세부 테스크(체크리스트)가 없습니다.<br>업무관리에서 항목을 먼저 등록하세요.</div>';
+    matchState = []; matchPrevOwners = new Set();
+    return;
+  }
+  // 항목별 현재 담당자 prefill — 배정 체크리스트에 같은 라벨이 있으면 그 사람이 담당
+  const active = assignments.filter((a) => a.active !== false);
+  matchPrevOwners = new Set();
+  matchState = items.map((it) => {
+    const owner = active.find((a) =>
+      (Array.isArray(a.checklist) ? a.checklist : []).some((c) => (c && c.label ? c.label : c) === it.label));
+    if (owner) matchPrevOwners.add(owner.employee_id);
+    return { label: it.label, inputs: it.inputs, employee_id: owner ? owner.employee_id : '' };
+  });
+  renderMatchRows();
+}
+
+function matchMemberOptions(selected) {
+  const dept = $('matchDeptFilter').value;
+  let list = dept ? membersCache.filter((u) => u.department === dept) : membersCache;
+  // 부서 필터에 걸려도 이미 선택된 담당자는 항상 보이게
+  if (selected && !list.some((u) => u.employee_id === selected)) {
+    const sel = membersCache.find((u) => u.employee_id === selected);
+    if (sel) list = [sel, ...list];
+  }
+  return ['<option value="">— 담당자 선택 —</option>']
+    .concat(list.map((u) =>
+      `<option value="${esc(u.employee_id)}"${u.employee_id === selected ? ' selected' : ''}>${esc(u.name || u.employee_id)} · ${esc(u.department || '')}</option>`))
+    .join('');
+}
+
+function renderMatchRows() {
+  const box = $('matchBoard');
+  if (!matchState.length) return;
+  box.innerHTML = '';
+  const eviLabel = Object.fromEntries(INPUT_DEFS);
+  matchState.forEach((r, i) => {
+    const chips = r.inputs.map((t) => `<span class="chip">${eviLabel[t] || t}</span>`).join(' ');
+    const row = el(`<div class="cl-item">
+      <div style="font-weight:600">${esc(r.label)} <span class="small">${chips}</span></div>
+      <select style="margin-top:8px"></select></div>`);
+    const sel = row.querySelector('select');
+    sel.innerHTML = matchMemberOptions(r.employee_id);
+    sel.onchange = (e) => { matchState[i].employee_id = e.target.value; };
+    box.appendChild(row);
+  });
+}
+
+async function saveMatching() {
+  $('matchErr').textContent = '';
+  const taskId = $('assignTaskSel').value;
+  if (!taskId || !matchState.length) { $('matchErr').textContent = '업무와 세부업무를 먼저 확인하세요.'; return; }
+  const byEmp = new Map();
+  matchState.forEach((r) => {
+    if (!r.employee_id) return;
+    if (!byEmp.has(r.employee_id)) byEmp.set(r.employee_id, []);
+    byEmp.get(r.employee_id).push({ label: r.label, inputs: r.inputs });
+  });
+  if (!byEmp.size) { $('matchErr').textContent = '담당자를 한 명 이상 선택하세요.'; return; }
+
+  const btn = $('matchSaveBtn');
+  btn.disabled = true; btn.textContent = '저장 중...';
+  try {
+    const { assignments } = await api('/api/admin/tasks/' + taskId + '/assignments');
+    for (const [emp, items] of byEmp) {
+      let asg = assignments.find((a) => a.employee_id === emp);
+      if (!asg) {
+        const r = await api('/api/admin/tasks/' + taskId + '/assignments',
+          { method: 'POST', body: { target: 'individual', employee_ids: [emp] } });
+        asg = r.assignments[0];
+      }
+      await api('/api/admin/assignments/' + asg.id, { method: 'PUT', body: { checklist: items } });
+    }
+    // 이전에 세부업무를 맡았다가 이번 매칭에서 모두 빠진 담당자 → 배정 해제 확인
+    for (const emp of matchPrevOwners) {
+      if (byEmp.has(emp)) continue;
+      const asg = assignments.find((a) => a.employee_id === emp);
+      if (!asg) continue;
+      const u = membersCache.find((x) => x.employee_id === emp);
+      if (confirm(`${(u && u.name) || emp} 님은 이번 매칭에서 맡은 세부업무가 없습니다. 이 업무 배정을 해제할까요?`)) {
+        await api('/api/admin/assignments/' + asg.id, { method: 'DELETE' });
+      }
+    }
+    toast('세부업무 매칭이 저장되었습니다.');
+    tasksCache = [];
+    await loadTaskSelectors();
+    await loadAssignments();
+  } catch (e) { $('matchErr').textContent = e.message; }
+  finally { btn.disabled = false; btn.textContent = '매칭 저장'; }
 }
 
 /* ---------- 배정 편집 모달 ---------- */
