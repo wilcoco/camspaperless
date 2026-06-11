@@ -87,8 +87,10 @@ function setupTabs() {
     if (tab === 'tasks') loadTasks();
     if (tab === 'members') loadMembers();
     if (tab === 'assign') loadTaskSelectors().then(loadTargets).then(loadAssignments);
-    if (tab === 'report') loadTaskSelectors();
-    if (tab === 'map') { loadTaskSelectors(); setTimeout(() => map && map.invalidateSize(), 100); }
+    // 셀렉트를 채운 뒤 현재 선택된 업무를 바로 렌더 — 업무가 1개면 change 이벤트가
+    // 발생할 수 없어서(이미 선택됨) 자동 표시가 없으면 빈 화면이 된다.
+    if (tab === 'report') loadTaskSelectors().then(loadReport);
+    if (tab === 'map') loadTaskSelectors().then(() => { loadMap(); setTimeout(() => map && map.invalidateSize(), 100); });
   });
 }
 
