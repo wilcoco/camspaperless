@@ -250,6 +250,9 @@ async function loadTasks() {
     const edit = el('<button class="btn small secondary">수정</button>');
     edit.onclick = () => fillTaskForm(t);
     actions.appendChild(edit);
+    const copy = el('<button class="btn small secondary" style="margin-left:4px">복사</button>');
+    copy.onclick = () => copyTaskToForm(t);
+    actions.appendChild(copy);
     const del = el('<button class="btn small danger" style="margin-left:4px">삭제</button>');
     del.onclick = async () => { if (confirm(`"${t.title}" 업무를 삭제할까요? 관련 기록도 삭제됩니다.`)) { await api('/api/admin/tasks/' + t.id, { method: 'DELETE' }); toast('삭제됨'); loadTasks(); } };
     actions.appendChild(del);
@@ -275,6 +278,16 @@ function fillTaskForm(t) {
   taskCl.set(t.checklist);
   $('taskFormTitle').textContent = '업무 수정 (#' + t.id + ')';
   window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+// 기존 업무를 폼에 불러와 "새 업무"로 저장하게 한다 (주기·증빙·체크리스트 그대로 복사)
+function copyTaskToForm(t) {
+  fillTaskForm(t);
+  $('taskId').value = '';
+  $('f_title').value = (t.title || '') + ' (복사)';
+  editingStartDate = null; // 복사본의 시작일은 저장 시점(오늘)
+  updateCyclePreview();
+  $('taskFormTitle').textContent = '새 업무 등록 (복사본)';
 }
 
 /* ---------- QR 모달 ---------- */
